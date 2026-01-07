@@ -7,6 +7,20 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -17,26 +31,16 @@ jobs:
           go-version-file: go.mod
 
       - name: Test
-        run: go test -v -coverprofile=coverage.out ./...
+        run: go test -v -race -coverprofile=coverage.out ./...
 
-      - name: Coverage
-        run: go tool cover -func=coverage.out
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          fail_ci_if_error: false
 
   e2e:
     runs-on: ubuntu-latest
-    services:
-      localstack:
-        image: localstack/localstack:latest
-        ports:
-          - 4566:4566
-        env:
-          SERVICES: s3,logs
-          DEFAULT_REGION: eu-west-1
-        options: >-
-          --health-cmd "curl -f http://localhost:4566/_localstack/health"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -44,5 +48,14 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: E2E Tests
-        run: go test -v -tags=e2e ./...
+      - name: Start LocalStack
+        run: |
+          docker compose -f e2e/docker-compose.yml up -d localstack
+          sleep 10
+
+      - name: Run e2e tests
+        run: ./e2e/run.sh
+
+      - name: Stop services
+        if: always()
+        run: docker compose -f e2e/docker-compose.yml down -v

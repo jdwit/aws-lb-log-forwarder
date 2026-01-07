@@ -1,0 +1,42 @@
+services:
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3,logs,firehose
+      DEFAULT_REGION: eu-west-1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    ports:
+      - "9200:9200"
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: admin123!
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  splunk:
+    image: splunk/splunk:latest
+    ports:
+      - "8088:8088"  # HEC
+      - "8000:8000"  # Web UI
+    environment:
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_PASSWORD: password123
+      SPLUNK_HEC_TOKEN: e2e-test-token
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/services/collector/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12

@@ -182,6 +182,8 @@ func TestCloudWatch_SendLogs(t *testing.T) {
 			close(done)
 		}()
 
+		// Give goroutine time to read entry before canceling
+		time.Sleep(10 * time.Millisecond)
 		cancel()
 		<-done
 

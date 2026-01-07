@@ -35,6 +35,8 @@ func New(config string, sess *session.Session) ([]Output, error) {
 			o, err = NewFirehose(sess)
 		case "splunk":
 			o, err = NewSplunk()
+		case "elasticsearch", "opensearch":
+			o, err = NewElasticsearch()
 		case "stdout":
 			o = NewStdout()
 		default:

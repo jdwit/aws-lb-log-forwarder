@@ -26,6 +26,7 @@ Field definitions from AWS docs:
 ## Supported Outputs
 
 - `cloudwatch` – CloudWatch Logs
+- `elasticsearch` / `opensearch` – Elasticsearch or OpenSearch
 - `firehose` – Kinesis Data Firehose
 - `splunk` – Splunk HEC
 - `stdout` – Write to stdout for testing
@@ -39,6 +40,11 @@ Field definitions from AWS docs:
 | `FIELDS` | Optional. Comma-separated fields to include (default: all) |
 | `CLOUDWATCH_LOG_GROUP` | CloudWatch log group name |
 | `CLOUDWATCH_LOG_STREAM` | CloudWatch log stream name |
+| `ELASTICSEARCH_ENDPOINT` | Elasticsearch/OpenSearch URL (e.g., `https://localhost:9200`) |
+| `ELASTICSEARCH_INDEX` | Index name for documents |
+| `ELASTICSEARCH_USERNAME` | Optional. Basic auth username |
+| `ELASTICSEARCH_PASSWORD` | Optional. Basic auth password |
+| `ELASTICSEARCH_SKIP_VERIFY` | Optional. Set to `true` to skip TLS verification |
 | `FIREHOSE_STREAM_NAME` | Kinesis Firehose delivery stream |
 | `SPLUNK_HEC_ENDPOINT` | Splunk HEC URL |
 | `SPLUNK_HEC_TOKEN` | Splunk HEC token |

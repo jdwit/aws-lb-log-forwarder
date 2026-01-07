@@ -10,7 +10,9 @@ ALB writes gzipped access logs to S3. This tool runs as a Lambda function trigge
 ALB → S3 bucket → S3 event → Lambda → outputs
 ```
 
-For deployment, see [terraform-aws-alb-log-forwarder](https://github.com/jdwit/terraform-aws-alb-log-forwarder) (coming soon).
+## Deployment
+
+See [terraform-aws-alb-log-forwarder](https://github.com/jdwit/terraform-aws-alb-log-forwarder) for the Terraform module. Includes Lambda deployment, S3 trigger, and CloudWatch alarm on failures.
 
 ## Supported Outputs
 

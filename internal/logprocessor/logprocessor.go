@@ -55,6 +55,14 @@ func New(sess *session.Session) (*LogProcessor, error) {
 	}, nil
 }
 
+// NewWithDeps creates a LogProcessor with explicit dependencies (for testing).
+func NewWithDeps(s3Client S3API, fields *FieldFilter, outs []outputs.Output) *LogProcessor {
+	if fields == nil {
+		fields, _ = NewFieldFilter("")
+	}
+	return &LogProcessor{s3: s3Client, fields: fields, outputs: outs}
+}
+
 // HandleLambdaEvent processes S3 object creation events from Lambda.
 func (p *LogProcessor) HandleLambdaEvent(ctx context.Context, event events.S3Event) error {
 	g, ctx := errgroup.WithContext(ctx)

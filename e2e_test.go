@@ -6,7 +6,10 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
+	"io"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -17,6 +20,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/jdwit/alb-log-forwarder/internal/logprocessor"
+	"github.com/jdwit/alb-log-forwarder/internal/outputs"
+	"github.com/jdwit/alb-log-forwarder/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -263,4 +268,81 @@ func TestE2E_FieldFiltering(t *testing.T) {
 	assert.Contains(t, *resp.Events[0].Message, "request")
 	assert.Contains(t, *resp.Events[0].Message, "elb_status_code")
 	assert.NotContains(t, *resp.Events[0].Message, "user_agent")
+}
+
+// TestE2E_MemoryBounded proves memory stays bounded regardless of log file size.
+// Processes 500k entries through the full pipeline (gzip decompress → parse → output)
+// and verifies heap stays under 50MB.
+func TestE2E_MemoryBounded(t *testing.T) {
+	const numEntries = 500_000
+	const maxHeapMB = 50
+
+	// Generate large gzipped log
+	gzData := generateLargeGzip(numEntries)
+	t.Logf("Processing %d entries (%.2f MB gzipped)", numEntries, float64(len(gzData))/1024/1024)
+
+	// Track peak memory
+	var peakHeap uint64
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				var m runtime.MemStats
+				runtime.ReadMemStats(&m)
+				if m.HeapAlloc > peakHeap {
+					peakHeap = m.HeapAlloc
+				}
+			}
+		}
+	}()
+
+	runtime.GC()
+
+	// Process through full pipeline
+	proc := newTestProcessor(gzData)
+	err := proc.ProcessLogs(context.Background(), types.S3ObjectInfo{Bucket: "test", Key: "test.log.gz"})
+	require.NoError(t, err)
+
+	close(done)
+
+	peakMB := float64(peakHeap) / 1024 / 1024
+	t.Logf("Peak heap: %.2f MB (limit: %d MB)", peakMB, maxHeapMB)
+
+	assert.Less(t, peakMB, float64(maxHeapMB), "heap exceeded limit - memory is not bounded")
+}
+
+func generateLargeGzip(n int) []byte {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(gw, `http 2024-01-15T10:%02d:%02dZ app/my-alb/abc123 192.168.1.%d:12345 10.0.0.1:80 0.001 0.002 0.003 200 200 100 %d "GET https://example.com:443/path HTTP/1.1" "Mozilla/5.0" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 arn:aws:elasticloadbalancing:eu-west-1:123456789:targetgroup/tg/abc123 "Root=1-abc-%d" "example.com" "arn:aws:acm:eu-west-1:123456789:certificate/abc" 0 2024-01-15T10:00:00.000000Z "forward" "-" "-" "10.0.0.1:80" "200" "-" "-" TID_%d`+"\n",
+			(i/60)%60, i%60, i%256, 1000+i, i, i)
+	}
+	gw.Close()
+	return buf.Bytes()
+}
+
+type mockS3 struct{ data []byte }
+
+func (m *mockS3) GetObject(*s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	return &s3.GetObjectOutput{Body: io.NopCloser(bytes.NewReader(m.data))}, nil
+}
+func (m *mockS3) ListObjectsV2(*s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+	return &s3.ListObjectsV2Output{}, nil
+}
+
+type discardOutput struct{}
+
+func (d *discardOutput) SendLogs(ctx context.Context, entries <-chan types.LogEntry) {
+	for range entries {
+	}
+}
+
+func newTestProcessor(gzData []byte) *logprocessor.LogProcessor {
+	return logprocessor.NewWithDeps(&mockS3{data: gzData}, nil, []outputs.Output{&discardOutput{}})
 }

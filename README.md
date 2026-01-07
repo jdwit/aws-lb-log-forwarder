@@ -2,13 +2,12 @@
 
 [![CI](https://github.com/jdwit/aws-lb-log-forwarder/actions/workflows/ci.yml/badge.svg)](https://github.com/jdwit/aws-lb-log-forwarder/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/jdwit/aws-lb-log-forwarder)](https://goreportcard.com/report/github.com/jdwit/aws-lb-log-forwarder)
-[![Go Reference](https://pkg.go.dev/badge/github.com/jdwit/aws-lb-log-forwarder.svg)](https://pkg.go.dev/github.com/jdwit/aws-lb-log-forwarder)
 
 Forward AWS ALB and NLB access logs from S3 to various outputs.
 
 ## How It Works
 
-AWS load balancers write gzipped access logs to S3. This tool runs as a Lambda function triggered by S3 events—each time a new log file lands, Lambda processes it and forwards the entries to your configured outputs.
+AWS load balancers write gzipped access logs to S3. This tool runs as a Lambda function triggered by S3 events; each time a new log file lands, Lambda processes it and forwards the entries to your configured outputs.
 
 ```
 ALB/NLB → S3 bucket → S3 event → Lambda → outputs
@@ -17,11 +16,6 @@ ALB/NLB → S3 bucket → S3 event → Lambda → outputs
 ## Deployment
 
 See [terraform-aws-lb-log-forwarder](https://github.com/jdwit/terraform-aws-lb-log-forwarder) for the Terraform module. Includes Lambda deployment, S3 trigger, and CloudWatch alarm on failures.
-
-## Supported Load Balancers
-
-- **ALB** (Application Load Balancer) — HTTP/HTTPS access logs
-- **NLB** (Network Load Balancer) — TLS access logs
 
 Field definitions from AWS docs:
 - [ALB access log fields](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html)

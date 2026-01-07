@@ -31,7 +31,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Test
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: make test
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -48,14 +48,12 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Start LocalStack
-        run: |
-          docker compose -f e2e/docker-compose.yml up -d localstack
-          sleep 10
+      - name: Start services
+        run: make e2e-up
 
       - name: Run e2e tests
-        run: ./e2e/run.sh
+        run: make e2e
 
       - name: Stop services
         if: always()
-        run: docker compose -f e2e/docker-compose.yml down -v
+        run: make e2e-down

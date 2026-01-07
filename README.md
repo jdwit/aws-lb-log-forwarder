@@ -1,71 +1,44 @@
 # ALB Log Forwarder
 
-Forward AWS Application Load Balancer access logs to CloudWatch Logs.
+Forward AWS ALB access logs from S3 to various outputs.
 
-```mermaid
-flowchart LR
-    ALB[Application Load Balancer] --> S3[(S3 Bucket)]
-    S3 -->|ObjectCreated| Lambda[ALB Log Forwarder]
-    Lambda --> CW[CloudWatch Logs]
-    Lambda --> OUT[stdout]
+## How It Works
+
+ALB writes gzipped access logs to S3. This tool runs as a Lambda function triggered by S3 events—each time a new log file lands, Lambda processes it and forwards the entries to your configured outputs.
+
+```
+ALB → S3 bucket → S3 event → Lambda → outputs
 ```
 
-## Overview
+For deployment, see [terraform-aws-alb-log-forwarder](https://github.com/jdwit/terraform-aws-alb-log-forwarder) (coming soon).
 
-ALBs store access logs as gzip-compressed files in S3. ALB Log Forwarder runs as a Lambda function that automatically processes new log files and forwards them to CloudWatch Logs or stdout.
+## Supported Outputs
 
-## Installation
-
-### CLI
-
-```bash
-go install github.com/jdwit/alb-log-forwarder@latest
-```
-
-### Lambda
-
-```bash
-# Build for Lambda
-GOOS=linux GOARCH=amd64 go build -o bootstrap .
-zip lambda.zip bootstrap
-
-# Upload lambda.zip to AWS Lambda:
-# - Runtime: Amazon Linux 2023 (provided.al2023)
-# - Handler: bootstrap
-# - Trigger: S3 ObjectCreated events on your ALB logs bucket
-```
+- `cloudwatch` – CloudWatch Logs
+- `firehose` – Kinesis Data Firehose
+- `splunk` – Splunk HEC
+- `stdout` – Write to stdout for testing
 
 ## Configuration
 
-Environment variables:
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `TARGETS` | Comma-separated: `cloudwatch`, `stdout` | Yes |
-| `CLOUDWATCH_LOG_GROUP` | CloudWatch Log Group name | If cloudwatch |
-| `CLOUDWATCH_LOG_STREAM` | CloudWatch Log Stream name | If cloudwatch |
-| `FIELDS` | Comma-separated fields to include (empty = all) | No |
-
-### Fields
-
-All 30 ALB log fields are supported. See [ALB access log entries](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html#access-log-entry-format).
-
-Common: `type`, `time`, `elb`, `client:port`, `target:port`, `request_processing_time`, `target_processing_time`, `response_processing_time`, `elb_status_code`, `target_status_code`, `request`, `user_agent`
+| Variable | Description |
+|----------|-------------|
+| `OUTPUTS` | Required. Comma-separated list of outputs |
+| `FIELDS` | Optional. Comma-separated fields to include (default: all) |
+| `CLOUDWATCH_LOG_GROUP` | CloudWatch log group name |
+| `CLOUDWATCH_LOG_STREAM` | CloudWatch log stream name |
+| `FIREHOSE_STREAM_NAME` | Kinesis Firehose delivery stream |
+| `SPLUNK_HEC_ENDPOINT` | Splunk HEC URL |
+| `SPLUNK_HEC_TOKEN` | Splunk HEC token |
+| `SPLUNK_SOURCE` | Optional. Splunk source field |
+| `SPLUNK_SOURCETYPE` | Optional. Splunk sourcetype field |
+| `SPLUNK_INDEX` | Optional. Splunk index |
 
 ## CLI Usage
 
+Can also run standalone for testing or backfilling:
+
 ```bash
-# Output to stdout
-TARGETS=stdout ./alb-log-forwarder s3://bucket/AWSLogs/123456789/elasticloadbalancing/us-east-1/2024/01/01/
-
-# Forward to CloudWatch with field filtering
-TARGETS=cloudwatch \
-CLOUDWATCH_LOG_GROUP=/alb/logs \
-CLOUDWATCH_LOG_STREAM=prod \
-FIELDS=request,elb_status_code,target_processing_time \
-./alb-log-forwarder s3://bucket/AWSLogs/123456789/elasticloadbalancing/us-east-1/2024/01/01/
+go install github.com/jdwit/alb-log-forwarder@latest
+OUTPUTS=stdout alb-log-forwarder s3://bucket/path/to/logs/
 ```
-
-## License
-
-MIT

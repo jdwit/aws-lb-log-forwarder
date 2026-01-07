@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/jdwit/alb-log-pipe/internal/processor"
+	"github.com/jdwit/alb-log-forwarder/internal/processor"
 )
 
 func main() {

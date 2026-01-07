@@ -1,34 +1,35 @@
-# ALB Log Pipe
+# ALB Log Forwarder
 
-Process and deliver your AWS Application Load Balancer access logs anywhere.
+Forward AWS Application Load Balancer access logs to CloudWatch Logs.
 
 ```mermaid
 flowchart LR
     ALB[Application Load Balancer] --> S3[(S3 Bucket)]
-    S3 -->|ObjectCreated| Lambda[ALB Log Pipe]
+    S3 -->|ObjectCreated| Lambda[ALB Log Forwarder]
     Lambda --> CW[CloudWatch Logs]
     Lambda --> OUT[stdout]
 ```
 
 ## Overview
 
-ALBs store access logs as gzip-compressed files in S3. ALB Log Pipe runs as a Lambda function that automatically processes new log files and forwards them to CloudWatch Logs or other targets.
+ALBs store access logs as gzip-compressed files in S3. ALB Log Forwarder runs as a Lambda function that automatically processes new log files and forwards them to CloudWatch Logs or stdout.
 
 ## Installation
 
-### As CLI tool
+### CLI
 
 ```bash
-go install github.com/jdwit/alb-log-pipe@latest
+go install github.com/jdwit/alb-log-forwarder@latest
 ```
 
-### As Lambda function
+### Lambda
 
 ```bash
-# Build the Lambda package
-make build-lambda
+# Build for Lambda
+GOOS=linux GOARCH=amd64 go build -o bootstrap .
+zip lambda.zip bootstrap
 
-# Upload lambda.zip to AWS Lambda with:
+# Upload lambda.zip to AWS Lambda:
 # - Runtime: Amazon Linux 2023 (provided.al2023)
 # - Handler: bootstrap
 # - Trigger: S3 ObjectCreated events on your ALB logs bucket
@@ -40,47 +41,29 @@ Environment variables:
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `TARGETS` | Comma-separated targets: `cloudwatch`, `stdout` | Yes |
-| `CLOUDWATCH_LOG_GROUP` | CloudWatch Log Group name | If cloudwatch target |
-| `CLOUDWATCH_LOG_STREAM` | CloudWatch Log Stream name | If cloudwatch target |
+| `TARGETS` | Comma-separated: `cloudwatch`, `stdout` | Yes |
+| `CLOUDWATCH_LOG_GROUP` | CloudWatch Log Group name | If cloudwatch |
+| `CLOUDWATCH_LOG_STREAM` | CloudWatch Log Stream name | If cloudwatch |
 | `FIELDS` | Comma-separated fields to include (empty = all) | No |
 
-### Available Fields
+### Fields
 
-All 30 ALB log fields are supported. See [ALB access log entries](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html#access-log-entry-format) for the full list.
+All 30 ALB log fields are supported. See [ALB access log entries](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html#access-log-entry-format).
 
-Common fields: `type`, `time`, `elb`, `client:port`, `target:port`, `request_processing_time`, `target_processing_time`, `response_processing_time`, `elb_status_code`, `target_status_code`, `request`, `user_agent`
+Common: `type`, `time`, `elb`, `client:port`, `target:port`, `request_processing_time`, `target_processing_time`, `response_processing_time`, `elb_status_code`, `target_status_code`, `request`, `user_agent`
 
 ## CLI Usage
 
-Process existing logs from the command line:
-
 ```bash
-TARGETS=stdout \
-./alb-log-pipe s3://my-bucket/AWSLogs/123456789/elasticloadbalancing/us-east-1/2024/01/01/
-```
+# Output to stdout
+TARGETS=stdout ./alb-log-forwarder s3://bucket/AWSLogs/123456789/elasticloadbalancing/us-east-1/2024/01/01/
 
-With CloudWatch and field filtering:
-
-```bash
+# Forward to CloudWatch with field filtering
 TARGETS=cloudwatch \
-CLOUDWATCH_LOG_GROUP=/alb/access-logs \
-CLOUDWATCH_LOG_STREAM=production \
+CLOUDWATCH_LOG_GROUP=/alb/logs \
+CLOUDWATCH_LOG_STREAM=prod \
 FIELDS=request,elb_status_code,target_processing_time \
-./alb-log-pipe s3://my-bucket/AWSLogs/123456789/elasticloadbalancing/us-east-1/2024/01/01/
-```
-
-## Development
-
-```bash
-# Build
-make build
-
-# Run tests
-make test
-
-# Format code
-make fmt
+./alb-log-forwarder s3://bucket/AWSLogs/123456789/elasticloadbalancing/us-east-1/2024/01/01/
 ```
 
 ## License

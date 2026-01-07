@@ -1,4 +1,4 @@
-module github.com/jdwit/alb-log-pipe
+module github.com/jdwit/alb-log-forwarder
 
 go 1.22
 

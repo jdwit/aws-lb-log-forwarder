@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/jdwit/alb-log-pipe/internal/types"
+	"github.com/jdwit/alb-log-forwarder/internal/types"
 )
 
 // Target receives log entries and sends them to a destination.

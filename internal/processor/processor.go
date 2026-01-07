@@ -14,8 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jdwit/alb-log-pipe/internal/targets"
-	"github.com/jdwit/alb-log-pipe/internal/types"
+	"github.com/jdwit/alb-log-forwarder/internal/targets"
+	"github.com/jdwit/alb-log-forwarder/internal/types"
 )
 
 // S3API defines the S3 operations used by LogProcessor.

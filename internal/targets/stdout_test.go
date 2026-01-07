@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdwit/alb-log-pipe/internal/types"
+	"github.com/jdwit/alb-log-forwarder/internal/types"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jdwit/alb-log-pipe/internal/targets"
-	"github.com/jdwit/alb-log-pipe/internal/types"
+	"github.com/jdwit/alb-log-forwarder/internal/targets"
+	"github.com/jdwit/alb-log-forwarder/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

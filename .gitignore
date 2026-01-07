@@ -25,3 +25,7 @@ go.work.sum
 /volume
 
 /alb-log-pipe
+
+# IDE
+.idea/
+.vscode/

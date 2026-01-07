@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/firehose"
-	"github.com/jdwit/alb-log-forwarder/internal/types"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 )
 
 const (

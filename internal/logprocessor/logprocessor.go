@@ -16,8 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jdwit/alb-log-forwarder/internal/outputs"
-	"github.com/jdwit/alb-log-forwarder/internal/types"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/outputs"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -29,7 +29,7 @@ type S3API interface {
 	ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
 }
 
-// LogProcessor processes ALB log files from S3 and sends them to configured outputs.
+// LogProcessor processes load balancer log files from S3 and sends them to configured outputs.
 type LogProcessor struct {
 	s3      S3API
 	fields  *FieldFilter
@@ -38,7 +38,12 @@ type LogProcessor struct {
 
 // New creates a LogProcessor from environment configuration.
 func New(sess *session.Session) (*LogProcessor, error) {
-	fields, err := NewFieldFilter(os.Getenv("FIELDS"))
+	lbType := LBType(strings.ToLower(os.Getenv("LB_TYPE")))
+	if lbType == "" {
+		lbType = LBTypeALB // default to ALB for backwards compatibility
+	}
+
+	fields, err := NewFieldFilter(lbType, os.Getenv("FIELDS"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid fields config: %w", err)
 	}
@@ -58,7 +63,7 @@ func New(sess *session.Session) (*LogProcessor, error) {
 // NewWithDeps creates a LogProcessor with explicit dependencies (for testing).
 func NewWithDeps(s3Client S3API, fields *FieldFilter, outs []outputs.Output) *LogProcessor {
 	if fields == nil {
-		fields, _ = NewFieldFilter("")
+		fields, _ = NewFieldFilter(LBTypeALB, "")
 	}
 	return &LogProcessor{s3: s3Client, fields: fields, outputs: outs}
 }
@@ -200,7 +205,7 @@ func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) 
 func (p *LogProcessor) parseRecords(r io.Reader, out chan<- types.LogEntry) error {
 	cr := csv.NewReader(r)
 	cr.Comma = ' '
-	cr.FieldsPerRecord = TotalFields()
+	cr.FieldsPerRecord = p.fields.TotalFields()
 
 	for {
 		record, err := cr.Read()
@@ -220,11 +225,18 @@ func (p *LogProcessor) parseRecords(r io.Reader, out chan<- types.LogEntry) erro
 }
 
 func (p *LogProcessor) recordToEntry(record []string) (types.LogEntry, error) {
-	if len(record) != TotalFields() {
-		return types.LogEntry{}, fmt.Errorf("expected %d fields, got %d", TotalFields(), len(record))
+	expectedFields := p.fields.TotalFields()
+	if len(record) != expectedFields {
+		return types.LogEntry{}, fmt.Errorf("expected %d fields, got %d", expectedFields, len(record))
 	}
 
-	ts, err := time.Parse(time.RFC3339, record[1])
+	// Time field is at index 1 for ALB, index 2 for NLB
+	timeIdx := 1
+	if p.fields.LBType() == LBTypeNLB {
+		timeIdx = 2
+	}
+
+	ts, err := time.Parse(time.RFC3339, record[timeIdx])
 	if err != nil {
 		return types.LogEntry{}, fmt.Errorf("parse timestamp: %w", err)
 	}

@@ -19,9 +19,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jdwit/alb-log-forwarder/internal/logprocessor"
-	"github.com/jdwit/alb-log-forwarder/internal/outputs"
-	"github.com/jdwit/alb-log-forwarder/internal/types"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/logprocessor"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/outputs"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

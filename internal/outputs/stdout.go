@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jdwit/alb-log-forwarder/internal/types"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 )
 
 // Stdout writes log entries to standard output.

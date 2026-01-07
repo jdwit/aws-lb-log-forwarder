@@ -15,8 +15,8 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jdwit/alb-log-forwarder/internal/outputs"
-	"github.com/jdwit/alb-log-forwarder/internal/types"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/outputs"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -52,7 +52,7 @@ func TestProcessLogs(t *testing.T) {
 			Body: io.NopCloser(&buf),
 		}, nil)
 
-		fields, err := NewFieldFilter("")
+		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
@@ -69,7 +69,7 @@ func TestProcessLogs(t *testing.T) {
 
 func TestParseRecords(t *testing.T) {
 	t.Run("Process CSV Records", func(t *testing.T) {
-		fields, err := NewFieldFilter("")
+		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{fields: fields}
@@ -96,7 +96,7 @@ func TestParseRecords(t *testing.T) {
 
 func TestRecordToEntry(t *testing.T) {
 	t.Run("Valid Log Entry", func(t *testing.T) {
-		fields, err := NewFieldFilter("")
+		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{fields: fields}
@@ -211,7 +211,7 @@ func TestHandleLambdaEvent(t *testing.T) {
 			Body: io.NopCloser(buf),
 		}, nil)
 
-		fields, err := NewFieldFilter("")
+		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
@@ -256,7 +256,7 @@ func TestHandleLambdaEvent(t *testing.T) {
 			Body: io.NopCloser(loadTestData(t)),
 		}, nil).Once()
 
-		fields, err := NewFieldFilter("")
+		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
@@ -298,7 +298,7 @@ func TestHandleLambdaEvent(t *testing.T) {
 			fmt.Errorf("access denied"),
 		)
 
-		fields, err := NewFieldFilter("")
+		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
@@ -344,7 +344,7 @@ func TestHandleS3URL(t *testing.T) {
 			Body: io.NopCloser(loadTestData(t)),
 		}, nil).Once()
 
-		fields, err := NewFieldFilter("")
+		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
@@ -392,7 +392,7 @@ func TestHandleS3URL(t *testing.T) {
 			Body: io.NopCloser(loadTestData(t)),
 		}, nil).Once()
 
-		fields, err := NewFieldFilter("")
+		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
@@ -411,7 +411,7 @@ func TestHandleS3URL(t *testing.T) {
 
 	t.Run("Invalid S3 URL", func(t *testing.T) {
 		mockS3 := new(MockS3API)
-		fields, _ := NewFieldFilter("")
+		fields, _ := NewFieldFilter(LBTypeALB, "")
 
 		lp := &LogProcessor{
 			s3:      mockS3,
@@ -435,7 +435,7 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 			Body: io.NopCloser(buf),
 		}, nil)
 
-		fields, err := NewFieldFilter("")
+		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
@@ -489,7 +489,7 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 			Body: io.NopCloser(buf),
 		}, nil)
 
-		fields, err := NewFieldFilter("time,request,elb_status_code")
+		fields, err := NewFieldFilter(LBTypeALB, "time,request,elb_status_code")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
@@ -526,7 +526,7 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 			Body: io.NopCloser(buf),
 		}, nil)
 
-		fields, err := NewFieldFilter("")
+		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{

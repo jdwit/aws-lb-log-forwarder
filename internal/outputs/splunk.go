@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jdwit/alb-log-forwarder/internal/types"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 )
 
 const (

@@ -1,4 +1,4 @@
-module github.com/jdwit/alb-log-forwarder
+module github.com/jdwit/aws-lb-log-forwarder
 
 go 1.24.0
 

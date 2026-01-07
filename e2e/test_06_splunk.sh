@@ -5,17 +5,21 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARY="$SCRIPT_DIR/aws-lb-log-forwarder"
 LOCALSTACK_ENDPOINT="${LOCALSTACK_ENDPOINT:-http://localhost:4566}"
-SPLUNK_HEC_ENDPOINT="${SPLUNK_HEC_ENDPOINT:-http://localhost:8088/services/collector/event}"
+SPLUNK_HEC_ENDPOINT="${SPLUNK_HEC_ENDPOINT:-https://localhost:8088/services/collector/event}"
 SPLUNK_HEC_TOKEN="${SPLUNK_HEC_TOKEN:-e2e-test-token}"
 
 BUCKET="e2e-splunk-test"
 
-# Sample ALB log entry
-LOG_ENTRY='https 2024-03-21T10:15:30.123456Z app/my-alb/abc 192.168.1.100:54321 10.0.1.50:8080 0.001 0.015 0.000 200 200 256 1024 "GET https://api.example.com:443/users HTTP/1.1" "Mozilla/5.0" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 arn:aws:elasticloadbalancing:us-east-1:123456789:tg/tg/abc "Root=1-abc" "api.example.com" "arn:aws:acm:us-east-1:123456789:cert/abc" 0 2024-03-21T10:15:30.107456Z "forward" "-" "-" "10.0.1.50:8080" "200" "-" "-" "-"'
+# NOTE: Log entries must use recent timestamps. CloudWatch/LocalStack rejects events
+# with timestamps too far in the past (>14 days). We generate timestamps dynamically.
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000000Z")
+
+# Sample ALB log entry (30 fields)
+LOG_ENTRY="https ${NOW} app/my-alb/abc 192.168.1.100:54321 10.0.1.50:8080 0.001 0.015 0.000 200 200 256 1024 \"GET https://api.example.com:443/users HTTP/1.1\" \"Mozilla/5.0\" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 arn:aws:elasticloadbalancing:us-east-1:123456789:tg/tg/abc \"Root=1-abc\" \"api.example.com\" \"arn:aws:acm:us-east-1:123456789:cert/abc\" 0 ${NOW} \"forward\" \"-\" \"-\" \"10.0.1.50:8080\" \"200\" \"-\" \"-\" \"-\""
 
 # Check if Splunk HEC is available
 HEALTH_ENDPOINT=$(echo "$SPLUNK_HEC_ENDPOINT" | sed 's|/services/collector/event|/services/collector/health|')
-if ! curl -s "$HEALTH_ENDPOINT" > /dev/null 2>&1; then
+if ! curl -sk "$HEALTH_ENDPOINT" > /dev/null 2>&1; then
     echo "SKIP: Splunk HEC not available at $SPLUNK_HEC_ENDPOINT"
     exit 0
 fi
@@ -38,6 +42,7 @@ export AWS_REGION="eu-west-1"
 export OUTPUTS="splunk"
 export SPLUNK_HEC_ENDPOINT="$SPLUNK_HEC_ENDPOINT"
 export SPLUNK_HEC_TOKEN="$SPLUNK_HEC_TOKEN"
+export SPLUNK_SKIP_VERIFY="true"
 export SPLUNK_SOURCE="alb"
 export SPLUNK_SOURCETYPE="aws:alb:accesslog"
 

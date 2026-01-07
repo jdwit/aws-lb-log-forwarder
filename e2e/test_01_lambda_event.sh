@@ -10,8 +10,12 @@ BUCKET="e2e-test-bucket"
 LOG_GROUP="/alb/e2e-test"
 LOG_STREAM="test-lambda-event"
 
-# Sample ALB log entry
-LOG_ENTRY='https 2024-03-21T10:15:30.123456Z app/my-alb/1234567890abcdef 192.168.1.100:54321 10.0.1.50:8080 0.001 0.015 0.000 200 200 256 1024 "GET https://api.example.com:443/v1/users?page=1 HTTP/1.1" "Mozilla/5.0" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/my-targets/1234567890abcdef "Root=1-abc" "api.example.com" "arn:aws:acm:us-east-1:123456789012:certificate/abc" 0 2024-03-21T10:15:30.107456Z "forward" "-" "-" "10.0.1.50:8080" "200" "-" "-" "-"'
+# NOTE: Log entries must use recent timestamps. CloudWatch/LocalStack rejects events
+# with timestamps too far in the past (>14 days). We generate timestamps dynamically.
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000000Z")
+
+# Sample ALB log entry (30 fields)
+LOG_ENTRY="https ${NOW} app/my-alb/1234567890abcdef 192.168.1.100:54321 10.0.1.50:8080 0.001 0.015 0.000 200 200 256 1024 \"GET https://api.example.com:443/v1/users?page=1 HTTP/1.1\" \"Mozilla/5.0\" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/my-targets/1234567890abcdef \"Root=1-abc\" \"api.example.com\" \"arn:aws:acm:us-east-1:123456789012:certificate/abc\" 0 ${NOW} \"forward\" \"-\" \"-\" \"10.0.1.50:8080\" \"200\" \"-\" \"-\" \"-\""
 
 # Create gzipped log file
 TEMP_LOG=$(mktemp)

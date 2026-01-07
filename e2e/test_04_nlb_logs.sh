@@ -8,8 +8,12 @@ LOCALSTACK_ENDPOINT="${LOCALSTACK_ENDPOINT:-http://localhost:4566}"
 
 BUCKET="e2e-nlb-test"
 
-# Sample NLB TLS log entry (24 fields)
-LOG_ENTRY='tls 2.0 2024-03-21T10:15:30.123456Z net/my-nlb/abc123 g3e4-5678 192.168.1.100:54321 10.0.1.50:443 12 5000 52 1024 - arn:aws:elasticloadbalancing:us-east-1:123456789:tg/tg/abc - ECDHE-RSA-AES128-GCM-SHA256 tlsv12 - my-nlb-abc.elb.us-east-1.amazonaws.com - - 2024-03-21T10:15:29.000000Z target:port/zone:az'
+# NOTE: Log entries must use recent timestamps. CloudWatch/LocalStack rejects events
+# with timestamps too far in the past (>14 days). We generate timestamps dynamically.
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000000Z")
+
+# Sample NLB TLS log entry (24 fields - each field space-separated)
+LOG_ENTRY="tls 2.0 ${NOW} net/my-nlb/abc123 g3e4-5678 192.168.1.100 54321 10.0.1.50 443 12 5000 52 1024 - arn:aws:elasticloadbalancing:us-east-1:123456789:cert/abc - ECDHE-RSA-AES128-GCM-SHA256 tlsv12 - my-nlb-abc.elb.us-east-1.amazonaws.com - - - ${NOW}"
 
 # Create gzipped log file
 TEMP_LOG=$(mktemp)

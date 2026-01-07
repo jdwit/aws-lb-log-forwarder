@@ -43,7 +43,7 @@ func main() {
 }
 
 func newSession() (*session.Session, error) {
-	if endpoint := os.Getenv("AWS_ENDPOINT"); endpoint != "" {
+	if endpoint := os.Getenv("AWS_ENDPOINT_URL"); endpoint != "" {
 		return session.NewSession(&aws.Config{
 			Endpoint:         aws.String(endpoint),
 			DisableSSL:       aws.Bool(true),

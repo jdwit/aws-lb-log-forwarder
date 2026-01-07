@@ -1,11 +1,10 @@
-package targets
+package outputs
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"sort"
 	"time"
 
@@ -37,16 +36,16 @@ type CloudWatch struct {
 	logStream  string
 }
 
-// NewCloudWatch creates a CloudWatch target from environment configuration.
+// NewCloudWatch creates a CloudWatch output from environment configuration.
 func NewCloudWatch(sess *session.Session) (*CloudWatch, error) {
-	group := os.Getenv("CLOUDWATCH_LOG_GROUP")
-	if group == "" {
-		return nil, fmt.Errorf("CLOUDWATCH_LOG_GROUP required")
+	group, err := requiredEnv("CLOUDWATCH_LOG_GROUP")
+	if err != nil {
+		return nil, err
 	}
 
-	stream := os.Getenv("CLOUDWATCH_LOG_STREAM")
-	if stream == "" {
-		return nil, fmt.Errorf("CLOUDWATCH_LOG_STREAM required")
+	stream, err := requiredEnv("CLOUDWATCH_LOG_STREAM")
+	if err != nil {
+		return nil, err
 	}
 
 	client := cloudwatchlogs.New(sess)

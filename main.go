@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/jdwit/alb-log-forwarder/internal/processor"
+	"github.com/jdwit/alb-log-forwarder/internal/logprocessor"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	proc, err := processor.New(sess)
+	proc, err := logprocessor.New(sess)
 	if err != nil {
 		slog.Error("processor init failed", "error", err)
 		os.Exit(1)
@@ -31,7 +31,7 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
-		slog.Error("usage: alb-log-pipe <s3-url>")
+		slog.Error("usage: alb-log-forwarder <s3-url>")
 		os.Exit(1)
 	}
 

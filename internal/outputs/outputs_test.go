@@ -1,4 +1,4 @@
-package targets
+package outputs
 
 import (
 	"testing"
@@ -12,31 +12,31 @@ func TestNew(t *testing.T) {
 		name          string
 		config        string
 		expectErr     bool
-		expectTargets int
+		expectOutputs int
 	}{
 		{
-			name:          "Single valid target - stdout",
+			name:          "Single valid output - stdout",
 			config:        "stdout",
 			expectErr:     false,
-			expectTargets: 1,
+			expectOutputs: 1,
 		},
 		{
-			name:          "Unsupported target type",
+			name:          "Unsupported output type",
 			config:        "unsupported",
 			expectErr:     true,
-			expectTargets: 0,
+			expectOutputs: 0,
 		},
 		{
-			name:          "Mixed valid and invalid targets",
+			name:          "Mixed valid and invalid outputs",
 			config:        "stdout,unsupported",
 			expectErr:     false,
-			expectTargets: 1,
+			expectOutputs: 1,
 		},
 		{
-			name:          "Empty target configuration",
+			name:          "Empty output configuration",
 			config:        "",
 			expectErr:     true,
-			expectTargets: 0,
+			expectOutputs: 0,
 		},
 	}
 
@@ -44,14 +44,14 @@ func TestNew(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mockSession := &session.Session{}
 
-			targets, err := New(tc.config, mockSession)
+			outputs, err := New(tc.config, mockSession)
 
 			if tc.expectErr {
 				assert.Error(t, err)
-				assert.Nil(t, targets)
+				assert.Nil(t, outputs)
 			} else {
 				assert.NoError(t, err)
-				assert.Len(t, targets, tc.expectTargets)
+				assert.Len(t, outputs, tc.expectOutputs)
 			}
 		})
 	}

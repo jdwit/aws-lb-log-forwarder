@@ -1,4 +1,4 @@
-package processor
+package logprocessor
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jdwit/alb-log-forwarder/internal/targets"
+	"github.com/jdwit/alb-log-forwarder/internal/outputs"
 	"github.com/jdwit/alb-log-forwarder/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -47,13 +47,13 @@ func TestProcessLogs(t *testing.T) {
 			Body: io.NopCloser(&buf),
 		}, nil)
 
-		fields, err := NewFields("")
+		fields, err := NewFieldFilter("")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
 			s3:      mockS3,
 			fields:  fields,
-			targets: []targets.Target{targets.NewStdout()},
+			outputs: []outputs.Output{outputs.NewStdout()},
 		}
 
 		err = lp.ProcessLogs(context.Background(), types.S3ObjectInfo{Bucket: "test-bucket", Key: "test-key"})
@@ -64,7 +64,7 @@ func TestProcessLogs(t *testing.T) {
 
 func TestParseRecords(t *testing.T) {
 	t.Run("Process CSV Records", func(t *testing.T) {
-		fields, err := NewFields("")
+		fields, err := NewFieldFilter("")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{fields: fields}
@@ -91,7 +91,7 @@ func TestParseRecords(t *testing.T) {
 
 func TestRecordToEntry(t *testing.T) {
 	t.Run("Valid Log Entry", func(t *testing.T) {
-		fields, err := NewFields("")
+		fields, err := NewFieldFilter("")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{fields: fields}
@@ -133,5 +133,26 @@ func TestRecordToEntry(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "2024-03-21T16:10:26.071854Z", logEntry.Timestamp.Format(time.RFC3339Nano))
 		assert.Equal(t, "PUT https://example.com:443/api/modify?user_ids=xxxxx4-xxxx-xxxx-xxxx-xxxxxxxxxxxx&ref_date= HTTP/1.1", logEntry.Data["request"])
+	})
+}
+
+func TestParseS3URL(t *testing.T) {
+	t.Run("Valid S3 URL", func(t *testing.T) {
+		bucket, key, err := parseS3URL("s3://mybucket/mykey")
+		require.NoError(t, err)
+		assert.Equal(t, "mybucket", bucket)
+		assert.Equal(t, "mykey", key)
+	})
+
+	t.Run("Missing s3 prefix", func(t *testing.T) {
+		_, _, err := parseS3URL("mybucket/mykey")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "s3://")
+	})
+
+	t.Run("No slash after bucket", func(t *testing.T) {
+		_, _, err := parseS3URL("s3://mybucket")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "separator")
 	})
 }

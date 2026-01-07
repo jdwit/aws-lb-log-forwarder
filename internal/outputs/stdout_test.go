@@ -1,4 +1,4 @@
-package targets
+package outputs
 
 import (
 	"context"
@@ -34,8 +34,8 @@ func TestStdout_SendLogs(t *testing.T) {
 		w.Close()
 	}()
 
-	target := NewStdout()
-	target.SendLogs(context.Background(), entries)
+	out := NewStdout()
+	out.SendLogs(context.Background(), entries)
 	w.Close()
 
 	output, _ := io.ReadAll(r)

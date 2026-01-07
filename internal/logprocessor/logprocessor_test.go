@@ -516,7 +516,7 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 		assert.NotContains(t, entries[0].Data, "client:port")
 	})
 
-	t.Run("Multiple outputs distribute entries", func(t *testing.T) {
+	t.Run("Multiple outputs receive all entries", func(t *testing.T) {
 		mockS3 := new(MockS3API)
 		output1 := &MockOutput{}
 		output2 := &MockOutput{}
@@ -541,10 +541,16 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Entries are distributed across outputs (not replicated)
+		// Both outputs should receive ALL entries (fan-out replication)
 		entries1 := output1.Entries()
 		entries2 := output2.Entries()
-		totalEntries := len(entries1) + len(entries2)
-		assert.Equal(t, 5, totalEntries)
+		assert.Len(t, entries1, 5, "output1 should receive all 5 entries")
+		assert.Len(t, entries2, 5, "output2 should receive all 5 entries")
+
+		// Verify both received the same data
+		for i := 0; i < 5; i++ {
+			assert.Equal(t, entries1[i].Data["elb_status_code"], entries2[i].Data["elb_status_code"],
+				"entry %d should have same status code in both outputs", i)
+		}
 	})
 }

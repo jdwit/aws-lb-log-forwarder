@@ -150,21 +150,39 @@ func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) 
 		}
 	}()
 
-	entries := make(chan types.LogEntry, 12500)
-
+	// Create a channel per output for fan-out (each output receives all entries)
+	channels := make([]chan types.LogEntry, len(p.outputs))
 	var wg sync.WaitGroup
-	for _, o := range p.outputs {
+	for i, o := range p.outputs {
+		ch := make(chan types.LogEntry, 12500)
+		channels[i] = ch
 		wg.Add(1)
-		go func(o outputs.Output) {
+		go func(o outputs.Output, ch <-chan types.LogEntry) {
 			defer wg.Done()
-			o.SendLogs(ctx, entries)
-		}(o)
+			o.SendLogs(ctx, ch)
+		}(o, ch)
 	}
 
-	if err := p.parseRecords(pr, entries); err != nil {
-		slog.Error("parse failed", "error", err)
+	// Parse records and fan out to all output channels
+	entries := make(chan types.LogEntry, 12500)
+	go func() {
+		if err := p.parseRecords(pr, entries); err != nil {
+			slog.Error("parse failed", "error", err)
+		}
+		close(entries)
+	}()
+
+	// Fan out: send each entry to all output channels
+	for entry := range entries {
+		for _, ch := range channels {
+			ch <- entry
+		}
 	}
-	close(entries)
+
+	// Close all output channels
+	for _, ch := range channels {
+		close(ch)
+	}
 	wg.Wait()
 
 	slog.Info("completed", "bucket", obj.Bucket, "key", obj.Key)

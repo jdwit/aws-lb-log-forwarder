@@ -3,17 +3,12 @@ services:
     image: localstack/localstack:latest
     ports:
       - "127.0.0.1:4566:4566"
-      - "127.0.0.1:4510-4559:4510-4559"
     environment:
-      - SERVICES=lambda,s3,cloudwatch,logs
+      - SERVICES=s3,logs
       - DEFAULT_REGION=eu-west-1
-      - AWS_ACCESS_KEY_ID=test
-      - AWS_SECRET_ACCESS_KEY=test
-      - DEBUG=1
-    volumes:
-      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
-      - "/var/run/docker.sock:/var/run/docker.sock"
-
-networks:
-  default:
-    name: alb-log-pipe
+      - DEBUG=0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

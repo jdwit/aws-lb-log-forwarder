@@ -2,7 +2,8 @@ package types
 
 import "time"
 
+// LogEntry represents a parsed ALB log entry with its timestamp.
 type LogEntry struct {
-	Data      map[string]string // Map of field name to value, this will be converted to JSON
+	Data      map[string]string
 	Timestamp time.Time
 }

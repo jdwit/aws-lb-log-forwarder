@@ -1,7 +1,0 @@
-version = 0.1
-
-[default]
-[default.global]
-[default.global.parameters]
-stack_name = "alb-log-pipe"
-parameter_overrides = "BucketPrefix=my-alb-logs ElbAccountId=156460612806" # eu-west-1

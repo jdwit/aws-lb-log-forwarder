@@ -1,37 +1,87 @@
 package processor
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
+	"strings"
+	"sync"
+
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/jdwit/alb-log-pipe/internal/types"
-	"log"
-	"strings"
-	"sync"
 )
 
-// concurrency is the max number of concurrent log processing operations
-const concurrency = 10
+const maxConcurrency = 10
 
-func (lp *LogProcessor) processS3Objects(s3Objects []types.S3ObjectInfo) error {
-	errs := make(chan error, len(s3Objects)) // buffered channel for errors
+// HandleLambdaEvent processes S3 object creation events from Lambda.
+func (p *LogProcessor) HandleLambdaEvent(ctx context.Context, event events.S3Event) error {
+	objects := make([]types.S3ObjectInfo, 0, len(event.Records))
+	for _, r := range event.Records {
+		objects = append(objects, types.S3ObjectInfo{
+			Bucket: r.S3.Bucket.Name,
+			Key:    r.S3.Object.Key,
+		})
+	}
+	return p.processObjects(ctx, objects)
+}
+
+// HandleS3URL processes all objects matching an S3 URL prefix (CLI mode).
+func (p *LogProcessor) HandleS3URL(ctx context.Context, url string) error {
+	bucket, prefix, err := parseS3URL(url)
+	if err != nil {
+		return fmt.Errorf("parse S3 URL: %w", err)
+	}
+
+	var objects []types.S3ObjectInfo
+	var token *string
+
+	for {
+		resp, err := p.s3.ListObjectsV2(&s3.ListObjectsV2Input{
+			Bucket:            aws.String(bucket),
+			Prefix:            aws.String(prefix),
+			ContinuationToken: token,
+		})
+		if err != nil {
+			return fmt.Errorf("list objects: %w", err)
+		}
+
+		for _, obj := range resp.Contents {
+			objects = append(objects, types.S3ObjectInfo{
+				Bucket: bucket,
+				Key:    *obj.Key,
+			})
+		}
+
+		if resp.IsTruncated == nil || !*resp.IsTruncated {
+			break
+		}
+		token = resp.NextContinuationToken
+	}
+
+	return p.processObjects(ctx, objects)
+}
+
+func (p *LogProcessor) processObjects(ctx context.Context, objects []types.S3ObjectInfo) error {
+	errs := make(chan error, len(objects))
+	sem := make(chan struct{}, maxConcurrency)
+
 	var wg sync.WaitGroup
-	concurrent := make(chan int, concurrency) // buffered channel for concurrency
-
-	for _, s3obj := range s3Objects {
+	for _, obj := range objects {
 		wg.Add(1)
-		concurrent <- 1
-		go func(s3obj types.S3ObjectInfo) {
+		sem <- struct{}{}
+
+		go func(obj types.S3ObjectInfo) {
 			defer func() {
-				log.Printf("completed processing s3://%s/%s", s3obj.Bucket, s3obj.Key)
 				wg.Done()
-				<-concurrent
+				<-sem
 			}()
-			err := lp.ProcessLogs(s3obj)
-			if err != nil {
-				errs <- fmt.Errorf("error processing logs for s3://%s/%s: %w", s3obj.Bucket, s3obj.Key, err)
+
+			if err := p.ProcessLogs(ctx, obj); err != nil {
+				errs <- fmt.Errorf("s3://%s/%s: %w", obj.Bucket, obj.Key, err)
 			}
-		}(s3obj)
+		}(obj)
 	}
 
 	go func() {
@@ -39,75 +89,28 @@ func (lp *LogProcessor) processS3Objects(s3Objects []types.S3ObjectInfo) error {
 		close(errs)
 	}()
 
-	var errorList []error
+	var errList []error
 	for err := range errs {
-		if err != nil {
-			errorList = append(errorList, err)
-		}
+		errList = append(errList, err)
+		slog.Error("processing failed", "error", err)
 	}
 
-	if len(errorList) > 0 {
-		return fmt.Errorf("encountered errors: %v", errorList)
+	if len(errList) > 0 {
+		return fmt.Errorf("%d objects failed to process", len(errList))
 	}
-
 	return nil
 }
 
-func (lp *LogProcessor) HandleLambdaEvent(event types.S3ObjectCreatedEvent) error {
-	var s3Objects []types.S3ObjectInfo
-	for _, record := range event.Records {
-		s3Objects = append(s3Objects, types.S3ObjectInfo{
-			Bucket: record.S3.Bucket.Name,
-			Key:    record.S3.Object.Key,
-		})
-	}
-	return lp.processS3Objects(s3Objects)
-}
-
-func (lp *LogProcessor) HandleS3URL(url string) error {
-	bucket, prefix, err := parseS3Url(url)
-	if err != nil {
-		return fmt.Errorf("failed to parse S3 URL: %v", err)
-	}
-
-	var s3Objects []types.S3ObjectInfo
-	var continuationToken *string
-	for {
-		resp, err := lp.s3Client.ListObjectsV2(&s3.ListObjectsV2Input{
-			Bucket:            aws.String(bucket),
-			Prefix:            aws.String(prefix),
-			ContinuationToken: continuationToken,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to list objects: %v", err)
-		}
-
-		for _, item := range resp.Contents {
-			s3Objects = append(s3Objects, types.S3ObjectInfo{
-				Bucket: bucket,
-				Key:    *item.Key,
-			})
-		}
-
-		if resp.IsTruncated == nil || !*resp.IsTruncated {
-			break
-		}
-		continuationToken = resp.NextContinuationToken
-	}
-
-	return lp.processS3Objects(s3Objects)
-}
-
-func parseS3Url(url string) (bucket string, prefix string, err error) {
+func parseS3URL(url string) (bucket, prefix string, err error) {
 	if !strings.HasPrefix(url, "s3://") {
-		return "", "", fmt.Errorf("invalid S3 URL, missing 's3://' prefix")
+		return "", "", fmt.Errorf("must start with s3://")
 	}
-	trimmedS3URL := strings.TrimPrefix(url, "s3://")
-	splitPos := strings.Index(trimmedS3URL, "/")
-	if splitPos == -1 {
-		return "", "", fmt.Errorf("invalid S3 URL, no '/' found after bucket name")
+
+	path := strings.TrimPrefix(url, "s3://")
+	idx := strings.Index(path, "/")
+	if idx == -1 {
+		return "", "", fmt.Errorf("missing path separator")
 	}
-	bucket = trimmedS3URL[:splitPos]
-	prefix = trimmedS3URL[splitPos+1:]
-	return bucket, prefix, nil
+
+	return path[:idx], path[idx+1:], nil
 }

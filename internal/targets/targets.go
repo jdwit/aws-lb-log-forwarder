@@ -1,51 +1,54 @@
 package targets
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
+	"strings"
+
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/jdwit/alb-log-pipe/internal/types"
-	"strings"
 )
 
-const (
-	TargetCloudWatch = "cloudwatch"
-	TargetStdout     = "stdout"
-)
-
+// Target receives log entries and sends them to a destination.
 type Target interface {
-	SendLogs(entryChain <-chan types.LogEntry)
+	SendLogs(ctx context.Context, entries <-chan types.LogEntry)
 }
 
-func GetTargets(targetsConfig string, sess *session.Session) ([]Target, error) {
-	targetTypes := strings.Split(targetsConfig, ",")
-	var targets []Target
+// New creates targets from a comma-separated configuration string.
+func New(config string, sess *session.Session) ([]Target, error) {
+	var result []Target
 
-	for _, t := range targetTypes {
-		var target Target
+	for _, name := range strings.Split(config, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+
+		var t Target
 		var err error
 
-		switch t {
-		case TargetCloudWatch:
-			target, err = NewCloudWatchTarget(sess)
-		case TargetStdout:
-			target = NewStdoutTarget()
+		switch name {
+		case "cloudwatch":
+			t, err = NewCloudWatch(sess)
+		case "stdout":
+			t = NewStdout()
 		default:
-			fmt.Printf("warning: unsupported target type: %s", t)
+			slog.Warn("unknown target", "name", name)
 			continue
 		}
 
-		// Skip any targets that fail to initialize due to missing config or other errors
 		if err != nil {
-			fmt.Printf("warning: could not initialize target %s: %v\n", t, err)
+			slog.Warn("target init failed", "name", name, "error", err)
 			continue
 		}
 
-		targets = append(targets, target)
+		result = append(result, t)
 	}
 
-	if len(targets) == 0 {
-		return nil, fmt.Errorf("error: no valid targets initialized")
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no valid targets configured")
 	}
 
-	return targets, nil
+	return result, nil
 }

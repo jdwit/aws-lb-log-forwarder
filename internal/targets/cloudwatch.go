@@ -1,26 +1,28 @@
 package targets
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
+	"sort"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 	"github.com/jdwit/alb-log-pipe/internal/types"
-	"log"
-	"os"
-	"sort"
-	"time"
 )
 
 const (
-	// maxBatchSize The maximum batch size of a PutLogEvents request to CloudWatch is 1MB (1_048_576 bytes)
-	maxBatchSize = 1_048_576
-	// maxBatchCount The maximum number of events in a PutLogEvents request to CloudWatch is 10_000
+	maxBatchSize  = 1_048_576 // 1MB
 	maxBatchCount = 10_000
+	flushInterval = 5 * time.Second
 )
 
-type CloudWatchLogsAPI interface {
+// CloudWatchAPI defines the CloudWatch Logs operations used.
+type CloudWatchAPI interface {
 	PutLogEvents(*cloudwatchlogs.PutLogEventsInput) (*cloudwatchlogs.PutLogEventsOutput, error)
 	CreateLogGroup(*cloudwatchlogs.CreateLogGroupInput) (*cloudwatchlogs.CreateLogGroupOutput, error)
 	CreateLogStream(*cloudwatchlogs.CreateLogStreamInput) (*cloudwatchlogs.CreateLogStreamOutput, error)
@@ -28,157 +30,151 @@ type CloudWatchLogsAPI interface {
 	DescribeLogStreams(*cloudwatchlogs.DescribeLogStreamsInput) (*cloudwatchlogs.DescribeLogStreamsOutput, error)
 }
 
-type LogConfig struct {
-	LogGroupName  string
-	LogStreamName string
+// CloudWatch sends log entries to CloudWatch Logs.
+type CloudWatch struct {
+	client     CloudWatchAPI
+	logGroup   string
+	logStream  string
 }
 
-type CloudWatchTarget struct {
-	cwClient  CloudWatchLogsAPI
-	logConfig LogConfig
+// NewCloudWatch creates a CloudWatch target from environment configuration.
+func NewCloudWatch(sess *session.Session) (*CloudWatch, error) {
+	group := os.Getenv("CLOUDWATCH_LOG_GROUP")
+	if group == "" {
+		return nil, fmt.Errorf("CLOUDWATCH_LOG_GROUP required")
+	}
+
+	stream := os.Getenv("CLOUDWATCH_LOG_STREAM")
+	if stream == "" {
+		return nil, fmt.Errorf("CLOUDWATCH_LOG_STREAM required")
+	}
+
+	client := cloudwatchlogs.New(sess)
+
+	if err := ensureLogGroup(client, group); err != nil {
+		return nil, fmt.Errorf("ensure log group: %w", err)
+	}
+	if err := ensureLogStream(client, group, stream); err != nil {
+		return nil, fmt.Errorf("ensure log stream: %w", err)
+	}
+
+	return &CloudWatch{
+		client:    client,
+		logGroup:  group,
+		logStream: stream,
+	}, nil
 }
 
-func (c *CloudWatchTarget) SendLogs(entryChan <-chan types.LogEntry) {
-	var events []*cloudwatchlogs.InputLogEvent
-	var currentBatchSize int
+// SendLogs receives entries and batches them to CloudWatch.
+func (c *CloudWatch) SendLogs(ctx context.Context, entries <-chan types.LogEntry) {
+	var batch []*cloudwatchlogs.InputLogEvent
+	var batchSize int
 
-	ticker := time.NewTicker(5 * time.Second) // Send any remaining logs every 5 seconds
+	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		c.send(batch)
+		batch = nil
+		batchSize = 0
+	}
 
 	for {
 		select {
-		case entry, ok := <-entryChan:
+		case <-ctx.Done():
+			flush()
+			return
+
+		case entry, ok := <-entries:
 			if !ok {
-				// Channel closed, send remaining events
-				if len(events) > 0 {
-					c.sendBatch(events)
-				}
+				flush()
 				return
 			}
 
-			jsonData, err := json.Marshal(entry.Data)
+			data, err := json.Marshal(entry.Data)
 			if err != nil {
-				fmt.Println("error marshaling log entry to JSON:", err)
+				slog.Error("marshal failed", "error", err)
 				continue
 			}
+
 			event := &cloudwatchlogs.InputLogEvent{
-				Message:   aws.String(string(jsonData)),
+				Message:   aws.String(string(data)),
 				Timestamp: aws.Int64(entry.Timestamp.UnixMilli()),
 			}
 
-			// Request size to CloudWatch is calculated as the sum of all event messages in UTF-8, plus 26 bytes for each log event
-			// https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/cloudwatch_limits_cwl.html
-			eventSize := len(jsonData) + 26
+			eventSize := len(data) + 26 // CloudWatch overhead per event
 
-			// Check if adding this event exceeds batch size or count
-			if len(events) > 0 && (currentBatchSize+eventSize > maxBatchSize || len(events) >= maxBatchCount) {
-				c.sendBatch(events)
-				events = nil
-				currentBatchSize = 0
+			if len(batch) > 0 && (batchSize+eventSize > maxBatchSize || len(batch) >= maxBatchCount) {
+				flush()
 			}
 
-			// Add event to batch
-			events = append(events, event)
-			currentBatchSize += eventSize
+			batch = append(batch, event)
+			batchSize += eventSize
 
 		case <-ticker.C:
-			// Send remaining events every 5 seconds, this ensures logs are sent even if batch size is not reached
-			if len(events) > 0 {
-				c.sendBatch(events)
-				events = nil
-				currentBatchSize = 0
-			}
+			flush()
 		}
 	}
 }
 
-func NewCloudWatchTarget(sess *session.Session) (Target, error) {
-	logGroupName := os.Getenv("CLOUDWATCH_LOG_GROUP")
-	if logGroupName == "" {
-		return nil, fmt.Errorf("environment variable CLOUDWATCH_LOG_GROUP is required")
-	}
+func (c *CloudWatch) send(events []*cloudwatchlogs.InputLogEvent) {
+	sort.Slice(events, func(i, j int) bool {
+		return *events[i].Timestamp < *events[j].Timestamp
+	})
 
-	logStreamName := os.Getenv("CLOUDWATCH_LOG_STREAM")
-	if logStreamName == "" {
-		return nil, fmt.Errorf("environment variable CLOUDWATCH_LOG_STREAM is required")
-	}
-
-	logConfig := LogConfig{
-		LogGroupName:  logGroupName,
-		LogStreamName: logStreamName,
-	}
-
-	cwClient := cloudwatchlogs.New(sess)
-	err := ensureLogGroupAndLogStreamExists(cwClient, logConfig)
-
+	_, err := c.client.PutLogEvents(&cloudwatchlogs.PutLogEventsInput{
+		LogEvents:     events,
+		LogGroupName:  aws.String(c.logGroup),
+		LogStreamName: aws.String(c.logStream),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("error creating log group and stream: %v", err)
+		slog.Error("put events failed", "error", err)
 	}
-
-	return &CloudWatchTarget{cwClient: cwClient, logConfig: logConfig}, nil
 }
 
-func ensureLogGroupAndLogStreamExists(client CloudWatchLogsAPI, logConfig LogConfig) error {
-	err := ensureLogGroupExists(client, logConfig.LogGroupName)
+func ensureLogGroup(client CloudWatchAPI, name string) error {
+	resp, err := client.DescribeLogGroups(&cloudwatchlogs.DescribeLogGroupsInput{
+		LogGroupNamePrefix: aws.String(name),
+	})
 	if err != nil {
 		return err
 	}
-	err = ensureLogStreamExists(client, logConfig.LogGroupName, logConfig.LogStreamName)
 
-	return err
-}
-
-func ensureLogGroupExists(client CloudWatchLogsAPI, name string) error {
-	resp, err := client.DescribeLogGroups(&cloudwatchlogs.DescribeLogGroupsInput{})
-	if err != nil {
-		return err
-	}
-	for _, logGroup := range resp.LogGroups {
-		if *logGroup.LogGroupName == name {
+	for _, g := range resp.LogGroups {
+		if *g.LogGroupName == name {
 			return nil
 		}
 	}
-	log.Printf("creating log group %s", name)
+
+	slog.Info("creating log group", "name", name)
 	_, err = client.CreateLogGroup(&cloudwatchlogs.CreateLogGroupInput{
 		LogGroupName: aws.String(name),
 	})
-
 	return err
 }
 
-func ensureLogStreamExists(client CloudWatchLogsAPI, logGroupName, logStreamName string) error {
+func ensureLogStream(client CloudWatchAPI, group, stream string) error {
 	resp, err := client.DescribeLogStreams(&cloudwatchlogs.DescribeLogStreamsInput{
-		LogGroupName: aws.String(logGroupName),
+		LogGroupName:        aws.String(group),
+		LogStreamNamePrefix: aws.String(stream),
 	})
 	if err != nil {
 		return err
 	}
-	for _, logStream := range resp.LogStreams {
-		if *logStream.LogStreamName == logStreamName {
+
+	for _, s := range resp.LogStreams {
+		if *s.LogStreamName == stream {
 			return nil
 		}
 	}
-	log.Printf("creating log stream %s in log group %s", logStreamName, logGroupName)
+
+	slog.Info("creating log stream", "group", group, "stream", stream)
 	_, err = client.CreateLogStream(&cloudwatchlogs.CreateLogStreamInput{
-		LogGroupName:  aws.String(logGroupName),
-		LogStreamName: aws.String(logStreamName),
+		LogGroupName:  aws.String(group),
+		LogStreamName: aws.String(stream),
 	})
-
 	return err
-}
-
-func (c *CloudWatchTarget) sendBatch(events []*cloudwatchlogs.InputLogEvent) {
-	// Log events in a single PutLogEvents request must be in chronological order
-	sort.Slice(events, func(i, j int) bool {
-		return aws.Int64Value(events[i].Timestamp) < aws.Int64Value(events[j].Timestamp)
-	})
-	_, err := c.cwClient.PutLogEvents(&cloudwatchlogs.PutLogEventsInput{
-		LogEvents:     events,
-		LogGroupName:  aws.String(c.logConfig.LogGroupName),
-		LogStreamName: aws.String(c.logConfig.LogStreamName),
-	})
-
-	if err != nil {
-		fmt.Println("error sending events to CloudWatch:", err)
-	}
 }

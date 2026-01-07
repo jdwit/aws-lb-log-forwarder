@@ -1,7 +1,6 @@
 package processor
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,12 +8,12 @@ import (
 )
 
 func TestNewFields(t *testing.T) {
-	t.Run("No fields provided, include all", func(t *testing.T) {
+	t.Run("No fields provided includes all", func(t *testing.T) {
 		fields, err := NewFields("")
 		require.NoError(t, err)
 
-		for _, field := range fieldNames {
-			assert.True(t, fields.IncludeField(getFieldIndex(field)))
+		for i := range fieldNames {
+			assert.True(t, fields.Include(i))
 		}
 	})
 
@@ -22,51 +21,49 @@ func TestNewFields(t *testing.T) {
 		fields, err := NewFields("type,time,elb")
 		require.NoError(t, err)
 
-		assert.True(t, fields.IncludeField(getFieldIndex("type")))
-		assert.True(t, fields.IncludeField(getFieldIndex("time")))
-		assert.True(t, fields.IncludeField(getFieldIndex("elb")))
-		assert.False(t, fields.IncludeField(getFieldIndex("client:port")))
+		assert.True(t, fields.Include(fieldIndex("type")))
+		assert.True(t, fields.Include(fieldIndex("time")))
+		assert.True(t, fields.Include(fieldIndex("elb")))
+		assert.False(t, fields.Include(fieldIndex("client:port")))
 	})
 
 	t.Run("Invalid field provided", func(t *testing.T) {
 		_, err := NewFields("invalid_field")
 		require.Error(t, err)
-		assert.Equal(t, "invalid field name 'invalid_field' provided", err.Error())
+		assert.Contains(t, err.Error(), "invalid field name")
 	})
 }
 
-func TestGetFieldNameByIndex(t *testing.T) {
+func TestFieldName(t *testing.T) {
 	fields, err := NewFields("")
 	require.NoError(t, err)
 
 	t.Run("Valid index", func(t *testing.T) {
-		fieldName, err := fields.GetFieldNameByIndex(0)
-		require.NoError(t, err)
-		assert.Equal(t, "type", fieldName)
+		name, ok := fields.FieldName(0)
+		assert.True(t, ok)
+		assert.Equal(t, "type", name)
 
-		fieldName, err = fields.GetFieldNameByIndex(1)
-		require.NoError(t, err)
-		assert.Equal(t, "time", fieldName)
+		name, ok = fields.FieldName(1)
+		assert.True(t, ok)
+		assert.Equal(t, "time", name)
 	})
 
 	t.Run("Invalid index", func(t *testing.T) {
-		_, err := fields.GetFieldNameByIndex(-1)
-		require.Error(t, err)
-		assert.Equal(t, "invalid field index -1", err.Error())
+		_, ok := fields.FieldName(-1)
+		assert.False(t, ok)
 
-		_, err = fields.GetFieldNameByIndex(len(fieldNames))
-		require.Error(t, err)
-		assert.Equal(t, fmt.Sprintf("invalid field index %d", len(fieldNames)), err.Error())
+		_, ok = fields.FieldName(len(fieldNames))
+		assert.False(t, ok)
 	})
 }
 
-func TestIncludeField(t *testing.T) {
+func TestInclude(t *testing.T) {
 	t.Run("Include all fields", func(t *testing.T) {
 		fields, err := NewFields("")
 		require.NoError(t, err)
 
 		for i := range fieldNames {
-			assert.True(t, fields.IncludeField(i))
+			assert.True(t, fields.Include(i))
 		}
 	})
 
@@ -74,23 +71,23 @@ func TestIncludeField(t *testing.T) {
 		fields, err := NewFields("type,time")
 		require.NoError(t, err)
 
-		assert.True(t, fields.IncludeField(getFieldIndex("type")))
-		assert.True(t, fields.IncludeField(getFieldIndex("time")))
-		assert.False(t, fields.IncludeField(getFieldIndex("elb")))
+		assert.True(t, fields.Include(fieldIndex("type")))
+		assert.True(t, fields.Include(fieldIndex("time")))
+		assert.False(t, fields.Include(fieldIndex("elb")))
 	})
 
 	t.Run("Invalid index", func(t *testing.T) {
 		fields, err := NewFields("")
 		require.NoError(t, err)
 
-		assert.False(t, fields.IncludeField(-1))
-		assert.False(t, fields.IncludeField(len(fieldNames)))
+		assert.False(t, fields.Include(-1))
+		assert.False(t, fields.Include(len(fieldNames)))
 	})
 }
 
-func getFieldIndex(fieldName string) int {
-	for i, name := range fieldNames {
-		if name == fieldName {
+func fieldIndex(name string) int {
+	for i, n := range fieldNames {
+		if n == name {
 			return i
 		}
 	}

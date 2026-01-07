@@ -1,25 +1,41 @@
 package targets
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jdwit/alb-log-pipe/internal/types"
+	"log/slog"
 	"time"
+
+	"github.com/jdwit/alb-log-pipe/internal/types"
 )
 
-type StdoutTarget struct{}
+// Stdout writes log entries to standard output.
+type Stdout struct{}
 
-func (c *StdoutTarget) SendLogs(entryChan <-chan types.LogEntry) {
-	for entry := range entryChan {
-		jsonData, err := json.Marshal(entry.Data)
-		if err != nil {
-			fmt.Printf("error marshaling log entry to JSON: %v\n", err)
-			continue
-		}
-		fmt.Printf("[%s] Log Entry: %s\n", entry.Timestamp.Format(time.RFC3339), jsonData)
-	}
+// NewStdout creates a stdout target.
+func NewStdout() *Stdout {
+	return &Stdout{}
 }
 
-func NewStdoutTarget() *StdoutTarget {
-	return &StdoutTarget{}
+// SendLogs writes each entry as JSON to stdout.
+func (s *Stdout) SendLogs(ctx context.Context, entries <-chan types.LogEntry) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case entry, ok := <-entries:
+			if !ok {
+				return
+			}
+
+			data, err := json.Marshal(entry.Data)
+			if err != nil {
+				slog.Error("marshal failed", "error", err)
+				continue
+			}
+
+			fmt.Printf("[%s] %s\n", entry.Timestamp.Format(time.RFC3339), data)
+		}
+	}
 }

@@ -2,163 +2,143 @@ package processor
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/csv"
 	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"sync"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/jdwit/alb-log-pipe/internal/targets"
 	"github.com/jdwit/alb-log-pipe/internal/types"
-	"io"
-	"log"
-	"os"
-	"sync"
-	"time"
 )
 
-type S3Api interface {
+// S3API defines the S3 operations used by LogProcessor.
+type S3API interface {
 	GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error)
 	ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
 }
 
+// LogProcessor processes ALB log files from S3 and sends them to configured targets.
 type LogProcessor struct {
-	s3Client S3Api
-	config   Config
+	s3      S3API
+	fields  *Fields
+	targets []targets.Target
 }
 
-type Config struct {
-	Targets []targets.Target
-	Fields  Fields
-}
-
-const (
-	// maxBatchCount The maximum number of events in a PutLogEvents request to CloudWatch is 10_000
-	maxBatchCount = 10_000
-)
-
-func NewLogProcessor(sess *session.Session) (*LogProcessor, error) {
-	s3Client := s3.New(sess)
-
-	f, err := NewFields(os.Getenv("FIELDS"))
+// New creates a LogProcessor from environment configuration.
+func New(sess *session.Session) (*LogProcessor, error) {
+	fields, err := NewFields(os.Getenv("FIELDS"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid fields config: %w", err)
 	}
 
-	t, err := targets.GetTargets(os.Getenv("TARGETS"), sess)
+	tgts, err := targets.New(os.Getenv("TARGETS"), sess)
 	if err != nil {
-		return nil, err
-	}
-
-	cfg := Config{
-		Targets: t,
-		Fields:  f,
+		return nil, fmt.Errorf("invalid targets config: %w", err)
 	}
 
 	return &LogProcessor{
-		s3Client: s3Client,
-		config:   cfg,
+		s3:      s3.New(sess),
+		fields:  fields,
+		targets: tgts,
 	}, nil
 }
 
-func (lp *LogProcessor) ProcessLogs(s3Object types.S3ObjectInfo) error {
-	log.Printf("processing logs from s3://%s/%s", s3Object.Bucket, s3Object.Key)
+// ProcessLogs downloads and processes a single S3 object.
+func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) error {
+	slog.Info("processing", "bucket", obj.Bucket, "key", obj.Key)
 
-	obj, err := lp.s3Client.GetObject(&s3.GetObjectInput{
-		Bucket: aws.String(s3Object.Bucket),
-		Key:    aws.String(s3Object.Key),
+	resp, err := p.s3.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(obj.Bucket),
+		Key:    aws.String(obj.Key),
 	})
-
 	if err != nil {
-		return fmt.Errorf("failed to get object: %v", err)
+		return fmt.Errorf("get object: %w", err)
 	}
+	defer resp.Body.Close()
 
-	defer obj.Body.Close()
+	pr, pw := io.Pipe()
 
-	reader, writer := io.Pipe()
-
-	// Decompress the gzip file in a goroutine
+	// Decompress in background
 	go func() {
-		gzipReader, err := gzip.NewReader(obj.Body)
+		defer pw.Close()
+		gr, err := gzip.NewReader(resp.Body)
 		if err != nil {
-			writer.CloseWithError(err)
-
+			pw.CloseWithError(fmt.Errorf("gzip reader: %w", err))
 			return
 		}
-		defer gzipReader.Close()
-		// Copy decompressed data to writer
-		if _, err := io.Copy(writer, gzipReader); err != nil {
-			writer.CloseWithError(err)
-
-			return
+		defer gr.Close()
+		if _, err := io.Copy(pw, gr); err != nil {
+			pw.CloseWithError(fmt.Errorf("decompress: %w", err))
 		}
-		writer.Close()
 	}()
 
-	// Set channel buffer size to 1.25 times the max batch count to avoid blocking
-	entryChan := make(chan types.LogEntry, int(float64(maxBatchCount)*1.25))
+	entries := make(chan types.LogEntry, 12500)
 
-	// Start each target in a separate goroutine
 	var wg sync.WaitGroup
-	for _, target := range lp.config.Targets {
+	for _, t := range p.targets {
 		wg.Add(1)
 		go func(t targets.Target) {
 			defer wg.Done()
-			t.SendLogs(entryChan)
-		}(target)
+			t.SendLogs(ctx, entries)
+		}(t)
 	}
 
-	// Process records and send to entryChan
-	if err := processRecords(reader, entryChan, lp.config.Fields); err != nil {
-		log.Printf("error processing records: %v", err)
+	if err := p.parseRecords(pr, entries); err != nil {
+		slog.Error("parse failed", "error", err)
 	}
-
-	close(entryChan)
+	close(entries)
 	wg.Wait()
 
+	slog.Info("completed", "bucket", obj.Bucket, "key", obj.Key)
 	return nil
 }
 
-func processRecords(reader io.Reader, entryChan chan types.LogEntry, fields Fields) error {
-	csvReader := csv.NewReader(reader)
-	csvReader.Comma = ' '
+func (p *LogProcessor) parseRecords(r io.Reader, out chan<- types.LogEntry) error {
+	cr := csv.NewReader(r)
+	cr.Comma = ' '
+	cr.FieldsPerRecord = FieldCount()
+
 	for {
-		record, err := csvReader.Read()
+		record, err := cr.Read()
 		if err == io.EOF {
-			break
+			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("error reading a record: %v", err)
+			return fmt.Errorf("read record: %w", err)
 		}
-		entry, err := recordToLogEntry(record, fields)
+
+		entry, err := p.recordToEntry(record)
 		if err != nil {
 			return err
 		}
-		entryChan <- entry
+		out <- entry
 	}
-
-	return nil
 }
 
-func recordToLogEntry(record []string, fields Fields) (types.LogEntry, error) {
-	// Check if the record has the expected number of fields
-	if len(record) != len(fieldNames) {
-		return types.LogEntry{}, fmt.Errorf("invalid log format: expected %d fields, got %d", len(fieldNames), len(record))
+func (p *LogProcessor) recordToEntry(record []string) (types.LogEntry, error) {
+	if len(record) != FieldCount() {
+		return types.LogEntry{}, fmt.Errorf("expected %d fields, got %d", FieldCount(), len(record))
 	}
-	timestamp, err := time.Parse(time.RFC3339, record[1]) // Timestamp should be at index 1
+
+	ts, err := time.Parse(time.RFC3339, record[1])
 	if err != nil {
-		return types.LogEntry{}, fmt.Errorf("error parsing timestamp: %v", err)
+		return types.LogEntry{}, fmt.Errorf("parse timestamp: %w", err)
 	}
-	entryMap := make(map[string]string)
-	for i, value := range record {
-		// Only include the fields that we want
-		if fields.IncludeField(i) {
-			fieldName, _ := fields.GetFieldNameByIndex(i)
-			entryMap[fieldName] = value
+
+	data := make(map[string]string)
+	for i, val := range record {
+		if p.fields.Include(i) {
+			name, _ := p.fields.FieldName(i)
+			data[name] = val
 		}
 	}
 
-	return types.LogEntry{
-		Data:      entryMap,
-		Timestamp: timestamp,
-	}, nil
+	return types.LogEntry{Data: data, Timestamp: ts}, nil
 }

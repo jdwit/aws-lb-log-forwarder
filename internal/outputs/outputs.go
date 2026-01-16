@@ -31,11 +31,9 @@ func New(config string, sess *session.Session) ([]Output, error) {
 		switch name {
 		case "cloudwatch":
 			o, err = NewCloudWatch(sess)
-		case "firehose":
-			o, err = NewFirehose(sess)
 		case "splunk":
 			o, err = NewSplunk()
-		case "elasticsearch", "opensearch":
+		case "elasticsearch":
 			o, err = NewElasticsearch()
 		case "stdout":
 			o = NewStdout()

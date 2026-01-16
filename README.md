@@ -17,6 +17,12 @@ ALB/NLB → S3 bucket → S3 event → Lambda → outputs
 
 See [terraform-aws-lb-log-forwarder](https://github.com/jdwit/terraform-aws-lb-log-forwarder) for the Terraform module. Includes Lambda deployment, S3 trigger, and CloudWatch alarm on failures.
 
+### TODO
+
+- [ ] Create ECR Public repository `aws-lb-log-forwarder` under alias `jdwit` in us-east-1
+- [ ] Create IAM role with OIDC trust for GitHub Actions
+- [ ] Add `AWS_ROLE_ARN` secret to this repository
+
 Field definitions from AWS docs:
 - [ALB access log fields](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html)
 - [NLB access log fields](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-access-logs.html)
@@ -24,8 +30,7 @@ Field definitions from AWS docs:
 ## Supported Outputs
 
 - `cloudwatch` – CloudWatch Logs
-- `elasticsearch` / `opensearch` – Elasticsearch or OpenSearch
-- `firehose` – Kinesis Data Firehose
+- `elasticsearch` – Elasticsearch or OpenSearch
 - `splunk` – Splunk HEC
 - `stdout` – Write to stdout for testing
 
@@ -43,7 +48,6 @@ Field definitions from AWS docs:
 | `ELASTICSEARCH_USERNAME` | Optional. Basic auth username |
 | `ELASTICSEARCH_PASSWORD` | Optional. Basic auth password |
 | `ELASTICSEARCH_SKIP_VERIFY` | Optional. Set to `true` to skip TLS verification |
-| `FIREHOSE_STREAM_NAME` | Kinesis Firehose delivery stream |
 | `SPLUNK_HEC_ENDPOINT` | Splunk HEC URL |
 | `SPLUNK_HEC_TOKEN` | Splunk HEC token |
 | `SPLUNK_SOURCE` | Optional. Splunk source field |

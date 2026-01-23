@@ -24,7 +24,7 @@ go.work.sum
 .aws-sam
 /volume
 
-/alb-log-pipe
+/aws-lb-log-forwarder
 
 # IDE
 .idea/

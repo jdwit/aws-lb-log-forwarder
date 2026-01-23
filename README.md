@@ -30,7 +30,7 @@ Field definitions from AWS docs:
 ## Supported Outputs
 
 - `cloudwatch` – CloudWatch Logs
-- `elasticsearch` – Elasticsearch or OpenSearch
+- `opensearch` – OpenSearch
 - `splunk` – Splunk HEC
 - `stdout` – Write to stdout for testing
 
@@ -43,11 +43,11 @@ Field definitions from AWS docs:
 | `FIELDS` | Optional. Comma-separated fields to include (default: all) |
 | `CLOUDWATCH_LOG_GROUP` | CloudWatch log group name |
 | `CLOUDWATCH_LOG_STREAM` | CloudWatch log stream name |
-| `ELASTICSEARCH_ENDPOINT` | Elasticsearch/OpenSearch URL (e.g., `https://localhost:9200`) |
-| `ELASTICSEARCH_INDEX` | Index name for documents |
-| `ELASTICSEARCH_USERNAME` | Optional. Basic auth username |
-| `ELASTICSEARCH_PASSWORD` | Optional. Basic auth password |
-| `ELASTICSEARCH_SKIP_VERIFY` | Optional. Set to `true` to skip TLS verification |
+| `OPENSEARCH_ENDPOINT` | OpenSearch URL (e.g., `https://localhost:9200`) |
+| `OPENSEARCH_INDEX` | Index name for documents |
+| `OPENSEARCH_USERNAME` | Optional. Basic auth username |
+| `OPENSEARCH_PASSWORD` | Optional. Basic auth password |
+| `OPENSEARCH_SKIP_VERIFY` | Optional. Set to `true` to skip TLS verification |
 | `SPLUNK_HEC_ENDPOINT` | Splunk HEC URL |
 | `SPLUNK_HEC_TOKEN` | Splunk HEC token |
 | `SPLUNK_SOURCE` | Optional. Splunk source field |

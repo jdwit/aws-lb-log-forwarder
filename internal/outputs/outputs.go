@@ -33,8 +33,8 @@ func New(config string, sess *session.Session) ([]Output, error) {
 			o, err = NewCloudWatch(sess)
 		case "splunk":
 			o, err = NewSplunk()
-		case "elasticsearch":
-			o, err = NewElasticsearch()
+		case "opensearch":
+			o, err = NewOpenSearch()
 		case "stdout":
 			o = NewStdout()
 		default:

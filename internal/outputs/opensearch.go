@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	esMaxBatchSize = 5_000_000 // 5MB
-	esMaxEvents    = 500
+	osMaxBatchSize = 5_000_000 // 5MB
+	osMaxEvents    = 500
 )
 
-// Elasticsearch sends log entries to Elasticsearch or OpenSearch.
-type Elasticsearch struct {
+// OpenSearch sends log entries to OpenSearch.
+type OpenSearch struct {
 	client   *http.Client
 	endpoint string
 	index    string
@@ -28,20 +28,20 @@ type Elasticsearch struct {
 	password string
 }
 
-// NewElasticsearch creates an Elasticsearch/OpenSearch output from environment configuration.
-func NewElasticsearch() (*Elasticsearch, error) {
-	endpoint, err := requiredEnv("ELASTICSEARCH_ENDPOINT")
+// NewOpenSearch creates an OpenSearch output from environment configuration.
+func NewOpenSearch() (*OpenSearch, error) {
+	endpoint, err := requiredEnv("OPENSEARCH_ENDPOINT")
 	if err != nil {
 		return nil, err
 	}
 
-	index, err := requiredEnv("ELASTICSEARCH_INDEX")
+	index, err := requiredEnv("OPENSEARCH_INDEX")
 	if err != nil {
 		return nil, err
 	}
 
 	// Allow skipping TLS verification for self-signed certs
-	skipVerify := os.Getenv("ELASTICSEARCH_SKIP_VERIFY") == "true"
+	skipVerify := os.Getenv("OPENSEARCH_SKIP_VERIFY") == "true"
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -50,17 +50,17 @@ func NewElasticsearch() (*Elasticsearch, error) {
 		},
 	}
 
-	return &Elasticsearch{
+	return &OpenSearch{
 		client:   client,
 		endpoint: endpoint,
 		index:    index,
-		username: os.Getenv("ELASTICSEARCH_USERNAME"),
-		password: os.Getenv("ELASTICSEARCH_PASSWORD"),
+		username: os.Getenv("OPENSEARCH_USERNAME"),
+		password: os.Getenv("OPENSEARCH_PASSWORD"),
 	}, nil
 }
 
-// SendLogs receives entries and batches them to Elasticsearch using the bulk API.
-func (e *Elasticsearch) SendLogs(ctx context.Context, entries <-chan types.LogEntry) {
+// SendLogs receives entries and batches them to OpenSearch using the bulk API.
+func (o *OpenSearch) SendLogs(ctx context.Context, entries <-chan types.LogEntry) {
 	var batch []types.LogEntry
 	var batchSize int
 
@@ -71,7 +71,7 @@ func (e *Elasticsearch) SendLogs(ctx context.Context, entries <-chan types.LogEn
 		if len(batch) == 0 {
 			return
 		}
-		e.send(ctx, batch)
+		o.send(ctx, batch)
 		batch = nil
 		batchSize = 0
 	}
@@ -91,7 +91,7 @@ func (e *Elasticsearch) SendLogs(ctx context.Context, entries <-chan types.LogEn
 			data, _ := json.Marshal(entry.Data)
 			eventSize := len(data)
 
-			if len(batch) > 0 && (batchSize+eventSize > esMaxBatchSize || len(batch) >= esMaxEvents) {
+			if len(batch) > 0 && (batchSize+eventSize > osMaxBatchSize || len(batch) >= osMaxEvents) {
 				flush()
 			}
 
@@ -104,21 +104,21 @@ func (e *Elasticsearch) SendLogs(ctx context.Context, entries <-chan types.LogEn
 	}
 }
 
-func (e *Elasticsearch) send(ctx context.Context, entries []types.LogEntry) {
+func (o *OpenSearch) send(ctx context.Context, entries []types.LogEntry) {
 	// Build bulk request body (NDJSON format)
 	var buf bytes.Buffer
 	for _, entry := range entries {
 		// Action line
 		action := map[string]any{
 			"index": map[string]any{
-				"_index": e.index,
+				"_index": o.index,
 			},
 		}
 		actionData, _ := json.Marshal(action)
 		buf.Write(actionData)
 		buf.WriteByte('\n')
 
-		// Document line (include timestamp as @timestamp for Kibana compatibility)
+		// Document line (include timestamp as @timestamp for OpenSearch Dashboards compatibility)
 		doc := make(map[string]any, len(entry.Data)+1)
 		for k, v := range entry.Data {
 			doc[k] = v
@@ -130,27 +130,27 @@ func (e *Elasticsearch) send(ctx context.Context, entries []types.LogEntry) {
 		buf.WriteByte('\n')
 	}
 
-	url := fmt.Sprintf("%s/_bulk", e.endpoint)
+	url := fmt.Sprintf("%s/_bulk", o.endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &buf)
 	if err != nil {
-		slog.Error("elasticsearch request failed", "error", err)
+		slog.Error("opensearch request failed", "error", err)
 		return
 	}
 
 	req.Header.Set("Content-Type", "application/x-ndjson")
 
-	if e.username != "" && e.password != "" {
-		req.SetBasicAuth(e.username, e.password)
+	if o.username != "" && o.password != "" {
+		req.SetBasicAuth(o.username, o.password)
 	}
 
-	resp, err := e.client.Do(req)
+	resp, err := o.client.Do(req)
 	if err != nil {
-		slog.Error("elasticsearch send failed", "error", err)
+		slog.Error("opensearch send failed", "error", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		slog.Error("elasticsearch error", "status", resp.StatusCode)
+		slog.Error("opensearch error", "status", resp.StatusCode)
 	}
 }

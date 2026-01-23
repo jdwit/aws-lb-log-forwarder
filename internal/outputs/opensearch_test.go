@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestElasticsearch_Send(t *testing.T) {
+func TestOpenSearch_Send(t *testing.T) {
 	t.Run("Send documents successfully", func(t *testing.T) {
 		var receivedDocs []map[string]any
 
@@ -39,7 +39,7 @@ func TestElasticsearch_Send(t *testing.T) {
 		}))
 		defer server.Close()
 
-		es := &Elasticsearch{
+		os := &OpenSearch{
 			client:   server.Client(),
 			endpoint: server.URL,
 			index:    "test-index",
@@ -50,7 +50,7 @@ func TestElasticsearch_Send(t *testing.T) {
 			{Timestamp: time.Now(), Data: map[string]string{"message": "test2"}},
 		}
 
-		es.send(context.Background(), entries)
+		os.send(context.Background(), entries)
 		assert.Len(t, receivedDocs, 2)
 		assert.Equal(t, "test1", receivedDocs[0]["message"])
 		assert.Equal(t, "test2", receivedDocs[1]["message"])
@@ -65,15 +65,15 @@ func TestElasticsearch_Send(t *testing.T) {
 		}))
 		defer server.Close()
 
-		es := &Elasticsearch{
+		os := &OpenSearch{
 			client:   server.Client(),
 			endpoint: server.URL,
 			index:    "test-index",
-			username: "elastic",
+			username: "admin",
 			password: "secret",
 		}
 
-		es.send(context.Background(), []types.LogEntry{
+		os.send(context.Background(), []types.LogEntry{
 			{Timestamp: time.Now(), Data: map[string]string{"message": "test"}},
 		})
 
@@ -81,7 +81,7 @@ func TestElasticsearch_Send(t *testing.T) {
 	})
 }
 
-func TestElasticsearch_SendLogs(t *testing.T) {
+func TestOpenSearch_SendLogs(t *testing.T) {
 	t.Run("Process entries", func(t *testing.T) {
 		docCount := 0
 
@@ -100,7 +100,7 @@ func TestElasticsearch_SendLogs(t *testing.T) {
 		}))
 		defer server.Close()
 
-		es := &Elasticsearch{
+		os := &OpenSearch{
 			client:   server.Client(),
 			endpoint: server.URL,
 			index:    "test-index",
@@ -117,39 +117,39 @@ func TestElasticsearch_SendLogs(t *testing.T) {
 		}
 		close(entries)
 
-		es.SendLogs(context.Background(), entries)
+		os.SendLogs(context.Background(), entries)
 		assert.Equal(t, 2, docCount)
 	})
 }
 
-func TestNewElasticsearch(t *testing.T) {
+func TestNewOpenSearch(t *testing.T) {
 	t.Run("Missing endpoint", func(t *testing.T) {
-		t.Setenv("ELASTICSEARCH_ENDPOINT", "")
-		t.Setenv("ELASTICSEARCH_INDEX", "logs")
-		_, err := NewElasticsearch()
+		t.Setenv("OPENSEARCH_ENDPOINT", "")
+		t.Setenv("OPENSEARCH_INDEX", "logs")
+		_, err := NewOpenSearch()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "ELASTICSEARCH_ENDPOINT")
+		assert.Contains(t, err.Error(), "OPENSEARCH_ENDPOINT")
 	})
 
 	t.Run("Missing index", func(t *testing.T) {
-		t.Setenv("ELASTICSEARCH_ENDPOINT", "https://localhost:9200")
-		t.Setenv("ELASTICSEARCH_INDEX", "")
-		_, err := NewElasticsearch()
+		t.Setenv("OPENSEARCH_ENDPOINT", "https://localhost:9200")
+		t.Setenv("OPENSEARCH_INDEX", "")
+		_, err := NewOpenSearch()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "ELASTICSEARCH_INDEX")
+		assert.Contains(t, err.Error(), "OPENSEARCH_INDEX")
 	})
 
 	t.Run("Valid config", func(t *testing.T) {
-		t.Setenv("ELASTICSEARCH_ENDPOINT", "https://localhost:9200")
-		t.Setenv("ELASTICSEARCH_INDEX", "lb-logs")
-		t.Setenv("ELASTICSEARCH_USERNAME", "elastic")
-		t.Setenv("ELASTICSEARCH_PASSWORD", "secret")
+		t.Setenv("OPENSEARCH_ENDPOINT", "https://localhost:9200")
+		t.Setenv("OPENSEARCH_INDEX", "lb-logs")
+		t.Setenv("OPENSEARCH_USERNAME", "admin")
+		t.Setenv("OPENSEARCH_PASSWORD", "secret")
 
-		es, err := NewElasticsearch()
+		os, err := NewOpenSearch()
 		require.NoError(t, err)
-		assert.Equal(t, "https://localhost:9200", es.endpoint)
-		assert.Equal(t, "lb-logs", es.index)
-		assert.Equal(t, "elastic", es.username)
-		assert.Equal(t, "secret", es.password)
+		assert.Equal(t, "https://localhost:9200", os.endpoint)
+		assert.Equal(t, "lb-logs", os.index)
+		assert.Equal(t, "admin", os.username)
+		assert.Equal(t, "secret", os.password)
 	})
 }

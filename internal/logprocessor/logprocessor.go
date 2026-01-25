@@ -186,7 +186,9 @@ func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) 
 	}()
 
 	// Fan out: send each entry to all output channels
+	var count int
 	for entry := range entries {
+		count++
 		for _, ch := range channels {
 			ch <- entry
 		}
@@ -198,14 +200,17 @@ func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) 
 	}
 	wg.Wait()
 
-	slog.Info("completed", "bucket", obj.Bucket, "key", obj.Key)
+	slog.Info("completed", "bucket", obj.Bucket, "key", obj.Key, "entries", count)
 	return nil
 }
 
 func (p *LogProcessor) parseRecords(r io.Reader, out chan<- types.LogEntry) error {
 	cr := csv.NewReader(r)
 	cr.Comma = ' '
-	cr.FieldsPerRecord = p.fields.TotalFields()
+	cr.FieldsPerRecord = -1 // Allow variable field count for forward compatibility
+
+	expectedFields := p.fields.TotalFields()
+	extraFieldsLogged := false
 
 	for {
 		record, err := cr.Read()
@@ -214,6 +219,12 @@ func (p *LogProcessor) parseRecords(r io.Reader, out chan<- types.LogEntry) erro
 		}
 		if err != nil {
 			return fmt.Errorf("read record: %w", err)
+		}
+
+		if !extraFieldsLogged && len(record) > expectedFields {
+			slog.Warn("log format has more fields than expected, new fields may have been added",
+				"expected", expectedFields, "got", len(record))
+			extraFieldsLogged = true
 		}
 
 		entry, err := p.recordToEntry(record)
@@ -225,9 +236,9 @@ func (p *LogProcessor) parseRecords(r io.Reader, out chan<- types.LogEntry) erro
 }
 
 func (p *LogProcessor) recordToEntry(record []string) (types.LogEntry, error) {
-	expectedFields := p.fields.TotalFields()
-	if len(record) != expectedFields {
-		return types.LogEntry{}, fmt.Errorf("expected %d fields, got %d", expectedFields, len(record))
+	minFields := p.fields.TotalFields()
+	if len(record) < minFields {
+		return types.LogEntry{}, fmt.Errorf("expected at least %d fields, got %d", minFields, len(record))
 	}
 
 	// Time field is at index 1 for ALB, index 2 for NLB

@@ -139,6 +139,87 @@ func TestRecordToEntry(t *testing.T) {
 		assert.Equal(t, "2024-03-21T16:10:26.071854Z", logEntry.Timestamp.Format(time.RFC3339Nano))
 		assert.Equal(t, "PUT https://example.com:443/api/modify?user_ids=xxxxx4-xxxx-xxxx-xxxx-xxxxxxxxxxxx&ref_date= HTTP/1.1", logEntry.Data["request"])
 	})
+
+	t.Run("Extra fields are ignored for forward compatibility", func(t *testing.T) {
+		fields, err := NewFieldFilter(LBTypeALB, "")
+		require.NoError(t, err)
+
+		lp := &LogProcessor{fields: fields}
+
+		// 30 known ALB fields + 3 extra future fields
+		record := []string{
+			"https",
+			"2024-03-21T16:10:26.071854Z",
+			"app/example-prod-lb/xxxxxxx4",
+			"192.0.2.104:36217",
+			"10.0.0.24:3003",
+			"0.004",
+			"0.024",
+			"0.003",
+			"203",
+			"203",
+			"1694",
+			"10783",
+			"GET https://example.com:443/api/test HTTP/1.1",
+			"axios/1.6.5",
+			"ECDHE-RSA-AES256-GCM-SHA384",
+			"TLSv1.3",
+			"arn:aws:elasticloadbalancing:xx-west-1:987654321098:targetgroup/example-prod-tg/xxxxxxxx4",
+			"Root=1-xxxxxx4-xxxxxxxxxxxxxxxxxxxxxxxx",
+			"example.com",
+			"arn:aws:acm:xx-west-1:987654321098:certificate/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+			"203",
+			"2024-03-21T16:10:26.061854Z",
+			"cache",
+			"-",
+			"-",
+			"10.0.0.24:3003",
+			"203",
+			"-",
+			"-",
+			"TID_a1b2c3d4e5f67890abcdef1234567890",
+			// Extra future fields that AWS might add
+			"future_field_1",
+			"future_field_2",
+			"future_field_3",
+		}
+
+		logEntry, err := lp.recordToEntry(record)
+		require.NoError(t, err)
+
+		// Should parse successfully
+		assert.Equal(t, "2024-03-21T16:10:26.071854Z", logEntry.Timestamp.Format(time.RFC3339Nano))
+		assert.Equal(t, "GET https://example.com:443/api/test HTTP/1.1", logEntry.Data["request"])
+
+		// Should only contain known fields (30 for ALB), not the extra ones
+		assert.Len(t, logEntry.Data, 30)
+		assert.NotContains(t, logEntry.Data, "future_field_1")
+	})
+
+	t.Run("Too few fields returns error", func(t *testing.T) {
+		fields, err := NewFieldFilter(LBTypeALB, "")
+		require.NoError(t, err)
+
+		lp := &LogProcessor{fields: fields}
+
+		// Only 10 fields instead of required 30
+		record := []string{
+			"https",
+			"2024-03-21T16:10:26.071854Z",
+			"app/example-prod-lb/xxxxxxx4",
+			"192.0.2.104:36217",
+			"10.0.0.24:3003",
+			"0.004",
+			"0.024",
+			"0.003",
+			"203",
+			"203",
+		}
+
+		_, err = lp.recordToEntry(record)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "expected at least 30 fields, got 10")
+	})
 }
 
 func TestParseS3URL(t *testing.T) {

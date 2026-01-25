@@ -7,13 +7,27 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  ECR_PUBLIC_REGISTRY: public.ecr.aws
-  ECR_PUBLIC_ALIAS: n2t3b2s2
-  IMAGE_NAME: aws-lb-log-forwarder
-
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+
   lint:
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,48 +78,37 @@ jobs:
         if: always()
         run: make e2e-down
 
-  publish:
+  release:
     needs: [lint, test, e2e]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
     permissions:
-      id-token: write
-      contents: read
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/setup-go@v5
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
+          go-version-file: go.mod
 
-      - name: Login to Amazon ECR Public
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build arm64
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o bootstrap .
+          zip aws-lb-log-forwarder_linux_arm64.zip bootstrap
+          rm bootstrap
+
+      - name: Build amd64
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bootstrap .
+          zip aws-lb-log-forwarder_linux_amd64.zip bootstrap
+          rm bootstrap
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          registry-type: public
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.ECR_PUBLIC_REGISTRY }}/${{ env.ECR_PUBLIC_ALIAS }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          generate_release_notes: true
+          files: |
+            aws-lb-log-forwarder_linux_arm64.zip
+            aws-lb-log-forwarder_linux_amd64.zip

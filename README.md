@@ -13,15 +13,15 @@ AWS load balancers write gzipped access logs to S3. This tool runs as a Lambda f
 ALB/NLB → S3 bucket → S3 event → Lambda → outputs
 ```
 
+### Streaming Architecture
+
+Most log forwarding solutions load entire log files into memory before processing. This doesn't scale: during peak traffic, log files grow large, Lambda functions run out of memory, and you end up with gaps in your data.
+
+This tool processes log files as a streaming pipeline with bounded memory usage. Each stage runs in its own goroutine, connected by channels with backpressure. The pipeline streams data without buffering entire files in memory—if an output is slow, parsing automatically throttles.
+
 ## Deployment
 
 See [terraform-aws-lb-log-forwarder](https://github.com/jdwit/terraform-aws-lb-log-forwarder) for the Terraform module. Includes Lambda deployment, S3 trigger, and CloudWatch alarm on failures.
-
-### TODO
-
-- [ ] Create ECR Public repository `aws-lb-log-forwarder` under alias `jdwit` in us-east-1
-- [ ] Create IAM role with OIDC trust for GitHub Actions
-- [ ] Add `AWS_ROLE_ARN` secret to this repository
 
 Field definitions from AWS docs:
 - [ALB access log fields](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html)
@@ -41,6 +41,7 @@ Field definitions from AWS docs:
 | `LB_TYPE` | Load balancer type: `alb` (default) or `nlb` |
 | `OUTPUTS` | Required. Comma-separated list of outputs |
 | `FIELDS` | Optional. Comma-separated fields to include (default: all) |
+| `BUFFER_SIZE` | Optional. Channel buffer size in number of log entries (default: 2000) |
 | `CLOUDWATCH_LOG_GROUP` | CloudWatch log group name |
 | `CLOUDWATCH_LOG_STREAM` | CloudWatch log stream name |
 | `OPENSEARCH_ENDPOINT` | OpenSearch URL (e.g., `https://localhost:9200`) |

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +22,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const maxConcurrency = 10
+const (
+	maxConcurrency    = 10
+	defaultBufferSize = 2000
+)
 
 // S3API defines the S3 operations used by LogProcessor.
 type S3API interface {
@@ -31,9 +35,10 @@ type S3API interface {
 
 // LogProcessor processes load balancer log files from S3 and sends them to configured outputs.
 type LogProcessor struct {
-	s3      S3API
-	fields  *FieldFilter
-	outputs []outputs.Output
+	s3         S3API
+	fields     *FieldFilter
+	outputs    []outputs.Output
+	bufferSize int
 }
 
 // New creates a LogProcessor from environment configuration.
@@ -53,10 +58,19 @@ func New(sess *session.Session) (*LogProcessor, error) {
 		return nil, fmt.Errorf("invalid outputs config: %w", err)
 	}
 
+	bufferSize := defaultBufferSize
+	if v := os.Getenv("BUFFER_SIZE"); v != "" {
+		bufferSize, err = strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid BUFFER_SIZE: %w", err)
+		}
+	}
+
 	return &LogProcessor{
-		s3:      s3.New(sess),
-		fields:  fields,
-		outputs: outs,
+		s3:         s3.New(sess),
+		fields:     fields,
+		outputs:    outs,
+		bufferSize: bufferSize,
 	}, nil
 }
 
@@ -65,7 +79,7 @@ func NewWithDeps(s3Client S3API, fields *FieldFilter, outs []outputs.Output) *Lo
 	if fields == nil {
 		fields, _ = NewFieldFilter(LBTypeALB, "")
 	}
-	return &LogProcessor{s3: s3Client, fields: fields, outputs: outs}
+	return &LogProcessor{s3: s3Client, fields: fields, outputs: outs, bufferSize: defaultBufferSize}
 }
 
 // HandleLambdaEvent processes S3 object creation events from Lambda.
@@ -167,7 +181,7 @@ func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) 
 	channels := make([]chan types.LogEntry, len(p.outputs))
 	var wg sync.WaitGroup
 	for i, o := range p.outputs {
-		ch := make(chan types.LogEntry, 12500)
+		ch := make(chan types.LogEntry, p.bufferSize)
 		channels[i] = ch
 		wg.Add(1)
 		go func(o outputs.Output, ch <-chan types.LogEntry) {
@@ -177,7 +191,7 @@ func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) 
 	}
 
 	// Parse records and fan out to all output channels
-	entries := make(chan types.LogEntry, 12500)
+	entries := make(chan types.LogEntry, p.bufferSize)
 	go func() {
 		if err := p.parseRecords(pr, entries); err != nil {
 			slog.Error("parse failed", "error", err)

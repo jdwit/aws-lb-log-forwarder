@@ -146,7 +146,7 @@ func TestRecordToEntry(t *testing.T) {
 
 		lp := &LogProcessor{fields: fields}
 
-		// 30 known ALB fields + 3 extra future fields
+		// 33 known ALB fields + 3 extra future fields
 		record := []string{
 			"https",
 			"2024-03-21T16:10:26.071854Z",
@@ -178,6 +178,9 @@ func TestRecordToEntry(t *testing.T) {
 			"-",
 			"-",
 			"TID_a1b2c3d4e5f67890abcdef1234567890",
+			"-",                    // transformed_host
+			"-",                    // transformed_uri
+			"OriginalRetrieved",    // request_transform_status
 			// Extra future fields that AWS might add
 			"future_field_1",
 			"future_field_2",
@@ -191,18 +194,18 @@ func TestRecordToEntry(t *testing.T) {
 		assert.Equal(t, "2024-03-21T16:10:26.071854Z", logEntry.Timestamp.Format(time.RFC3339Nano))
 		assert.Equal(t, "GET https://example.com:443/api/test HTTP/1.1", logEntry.Data["request"])
 
-		// Should only contain known fields (30 for ALB), not the extra ones
-		assert.Len(t, logEntry.Data, 30)
+		// Should only contain known fields (33 for ALB), not the extra ones
+		assert.Len(t, logEntry.Data, 33)
 		assert.NotContains(t, logEntry.Data, "future_field_1")
 	})
 
-	t.Run("Too few fields returns error", func(t *testing.T) {
+	t.Run("Fewer fields than expected works for backward compatibility", func(t *testing.T) {
 		fields, err := NewFieldFilter(LBTypeALB, "")
 		require.NoError(t, err)
 
 		lp := &LogProcessor{fields: fields}
 
-		// Only 10 fields instead of required 30
+		// Only 10 fields instead of current 30 - simulates older log format
 		record := []string{
 			"https",
 			"2024-03-21T16:10:26.071854Z",
@@ -216,9 +219,50 @@ func TestRecordToEntry(t *testing.T) {
 			"203",
 		}
 
+		logEntry, err := lp.recordToEntry(record)
+		require.NoError(t, err)
+
+		// Should parse timestamp correctly
+		assert.Equal(t, "2024-03-21T16:10:26.071854Z", logEntry.Timestamp.Format(time.RFC3339Nano))
+
+		// Should only contain the fields that exist in the record
+		assert.Len(t, logEntry.Data, 10)
+		assert.Equal(t, "https", logEntry.Data["type"])
+		assert.Equal(t, "app/example-prod-lb/xxxxxxx4", logEntry.Data["elb"])
+		assert.Equal(t, "192.0.2.104:36217", logEntry.Data["client:port"])
+
+		// Fields beyond what's in the record should not be present
+		assert.NotContains(t, logEntry.Data, "request")
+		assert.NotContains(t, logEntry.Data, "user_agent")
+	})
+
+	t.Run("Too short record returns error", func(t *testing.T) {
+		fields, err := NewFieldFilter(LBTypeALB, "")
+		require.NoError(t, err)
+
+		lp := &LogProcessor{fields: fields}
+
+		// Only 1 field - can't even get timestamp (which is at index 1 for ALB)
+		record := []string{
+			"https",
+		}
+
 		_, err = lp.recordToEntry(record)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "expected at least 30 fields, got 10")
+		assert.Contains(t, err.Error(), "record too short")
+	})
+
+	t.Run("Empty record returns error", func(t *testing.T) {
+		fields, err := NewFieldFilter(LBTypeALB, "")
+		require.NoError(t, err)
+
+		lp := &LogProcessor{fields: fields}
+
+		record := []string{}
+
+		_, err = lp.recordToEntry(record)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "record too short")
 	})
 }
 

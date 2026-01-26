@@ -46,6 +46,9 @@ var albFields = []string{
 	"classification",
 	"classification_reason",
 	"conn_trace_id",
+	"transformed_host",
+	"transformed_uri",
+	"request_transform_status",
 }
 
 // NLB TLS log fields in order.

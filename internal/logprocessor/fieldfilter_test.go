@@ -119,7 +119,7 @@ func TestTotalFields(t *testing.T) {
 	albFilter, _ := NewFieldFilter(LBTypeALB, "")
 	nlbFilter, _ := NewFieldFilter(LBTypeNLB, "")
 
-	assert.Equal(t, 30, albFilter.TotalFields()) // ALB has 30 fields
+	assert.Equal(t, 33, albFilter.TotalFields()) // ALB has 33 fields
 	assert.Equal(t, 24, nlbFilter.TotalFields()) // NLB TLS has 24 fields
 }
 

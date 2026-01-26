@@ -224,7 +224,7 @@ func (p *LogProcessor) parseRecords(r io.Reader, out chan<- types.LogEntry) erro
 	cr.FieldsPerRecord = -1 // Allow variable field count for forward compatibility
 
 	expectedFields := p.fields.TotalFields()
-	extraFieldsLogged := false
+	firstRecord := true
 
 	for {
 		record, err := cr.Read()
@@ -235,10 +235,9 @@ func (p *LogProcessor) parseRecords(r io.Reader, out chan<- types.LogEntry) erro
 			return fmt.Errorf("read record: %w", err)
 		}
 
-		if !extraFieldsLogged && len(record) > expectedFields {
-			slog.Warn("log format has more fields than expected, new fields may have been added",
-				"expected", expectedFields, "got", len(record))
-			extraFieldsLogged = true
+		if firstRecord {
+			slog.Info("log format", "fields", len(record), "expected", expectedFields)
+			firstRecord = false
 		}
 
 		entry, err := p.recordToEntry(record)
@@ -250,15 +249,15 @@ func (p *LogProcessor) parseRecords(r io.Reader, out chan<- types.LogEntry) erro
 }
 
 func (p *LogProcessor) recordToEntry(record []string) (types.LogEntry, error) {
-	minFields := p.fields.TotalFields()
-	if len(record) < minFields {
-		return types.LogEntry{}, fmt.Errorf("expected at least %d fields, got %d", minFields, len(record))
-	}
-
 	// Time field is at index 1 for ALB, index 2 for NLB
 	timeIdx := 1
 	if p.fields.LBType() == LBTypeNLB {
 		timeIdx = 2
+	}
+
+	// Only require enough fields to extract the timestamp
+	if len(record) <= timeIdx {
+		return types.LogEntry{}, fmt.Errorf("record too short: need at least %d fields for timestamp, got %d", timeIdx+1, len(record))
 	}
 
 	ts, err := time.Parse(time.RFC3339, record[timeIdx])
@@ -266,6 +265,7 @@ func (p *LogProcessor) recordToEntry(record []string) (types.LogEntry, error) {
 		return types.LogEntry{}, fmt.Errorf("parse timestamp: %w", err)
 	}
 
+	// Process whatever fields exist, skip missing ones
 	data := make(map[string]string)
 	for i, val := range record {
 		if p.fields.Includes(i) {

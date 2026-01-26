@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test: Splunk HEC output
+# Test: Splunk HEC destination
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -34,12 +34,12 @@ gzip -c "$TEMP_LOG" > "$TEMP_GZ"
 aws --endpoint-url="$LOCALSTACK_ENDPOINT" s3 mb "s3://$BUCKET" 2>/dev/null || true
 aws --endpoint-url="$LOCALSTACK_ENDPOINT" s3 cp "$TEMP_GZ" "s3://$BUCKET/logs/test.log.gz"
 
-# Run forwarder with Splunk output
+# Run forwarder with Splunk destination
 export AWS_ENDPOINT_URL="$LOCALSTACK_ENDPOINT"
 export AWS_ACCESS_KEY_ID="test"
 export AWS_SECRET_ACCESS_KEY="test"
 export AWS_REGION="eu-west-1"
-export OUTPUTS="splunk"
+export DESTINATIONS="splunk"
 export SPLUNK_HEC_ENDPOINT="$SPLUNK_HEC_ENDPOINT"
 export SPLUNK_HEC_TOKEN="$SPLUNK_HEC_TOKEN"
 export SPLUNK_SKIP_VERIFY="true"
@@ -50,7 +50,7 @@ export SPLUNK_SOURCETYPE="aws:alb:accesslog"
 OUTPUT=$("$BINARY" "s3://$BUCKET/logs/" 2>&1)
 
 # If we got here without error, Splunk accepted the events
-echo "Splunk HEC output verified"
+echo "Splunk HEC destination verified"
 
 # Cleanup
 rm -f "$TEMP_LOG" "$TEMP_GZ"

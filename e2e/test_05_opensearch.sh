@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test: OpenSearch output
+# Test: OpenSearch destination
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -36,12 +36,12 @@ gzip -c "$TEMP_LOG" > "$TEMP_GZ"
 aws --endpoint-url="$LOCALSTACK_ENDPOINT" s3 mb "s3://$BUCKET" 2>/dev/null || true
 aws --endpoint-url="$LOCALSTACK_ENDPOINT" s3 cp "$TEMP_GZ" "s3://$BUCKET/logs/test.log.gz"
 
-# Run forwarder with OpenSearch output
+# Run forwarder with OpenSearch destination
 export AWS_ENDPOINT_URL="$LOCALSTACK_ENDPOINT"
 export AWS_ACCESS_KEY_ID="test"
 export AWS_SECRET_ACCESS_KEY="test"
 export AWS_REGION="eu-west-1"
-export OUTPUTS="opensearch"
+export DESTINATIONS="opensearch"
 export OPENSEARCH_ENDPOINT="$OPENSEARCH_ENDPOINT"
 export OPENSEARCH_INDEX="$INDEX"
 
@@ -60,7 +60,7 @@ if [ "$DOC_COUNT" -lt 1 ]; then
     exit 1
 fi
 
-echo "OpenSearch output verified: $DOC_COUNT documents indexed"
+echo "OpenSearch destination verified: $DOC_COUNT documents indexed"
 
 # Cleanup
 rm -f "$TEMP_LOG" "$TEMP_GZ"

@@ -17,7 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jdwit/aws-lb-log-forwarder/internal/outputs"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/destinations"
 	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 	"golang.org/x/sync/errgroup"
 )
@@ -33,12 +33,12 @@ type S3API interface {
 	ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
 }
 
-// LogProcessor processes load balancer log files from S3 and sends them to configured outputs.
+// LogProcessor processes load balancer log files from S3 and sends them to configured destinations.
 type LogProcessor struct {
-	s3         S3API
-	fields     *FieldFilter
-	outputs    []outputs.Output
-	bufferSize int
+	s3           S3API
+	fields       *FieldFilter
+	destinations []destinations.Destination
+	bufferSize   int
 }
 
 // New creates a LogProcessor from environment configuration.
@@ -53,9 +53,9 @@ func New(sess *session.Session) (*LogProcessor, error) {
 		return nil, fmt.Errorf("invalid fields config: %w", err)
 	}
 
-	outs, err := outputs.New(os.Getenv("OUTPUTS"), sess)
+	dests, err := destinations.New(os.Getenv("DESTINATIONS"), sess)
 	if err != nil {
-		return nil, fmt.Errorf("invalid outputs config: %w", err)
+		return nil, fmt.Errorf("invalid destinations config: %w", err)
 	}
 
 	bufferSize := defaultBufferSize
@@ -67,19 +67,19 @@ func New(sess *session.Session) (*LogProcessor, error) {
 	}
 
 	return &LogProcessor{
-		s3:         s3.New(sess),
-		fields:     fields,
-		outputs:    outs,
-		bufferSize: bufferSize,
+		s3:           s3.New(sess),
+		fields:       fields,
+		destinations: dests,
+		bufferSize:   bufferSize,
 	}, nil
 }
 
 // NewWithDeps creates a LogProcessor with explicit dependencies (for testing).
-func NewWithDeps(s3Client S3API, fields *FieldFilter, outs []outputs.Output) *LogProcessor {
+func NewWithDeps(s3Client S3API, fields *FieldFilter, dests []destinations.Destination) *LogProcessor {
 	if fields == nil {
 		fields, _ = NewFieldFilter(LBTypeALB, "")
 	}
-	return &LogProcessor{s3: s3Client, fields: fields, outputs: outs, bufferSize: defaultBufferSize}
+	return &LogProcessor{s3: s3Client, fields: fields, destinations: dests, bufferSize: defaultBufferSize}
 }
 
 // HandleLambdaEvent processes S3 object creation events from Lambda.
@@ -177,20 +177,20 @@ func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) 
 		}
 	}()
 
-	// Create a channel per output for fan-out (each output receives all entries)
-	channels := make([]chan types.LogEntry, len(p.outputs))
+	// Create a channel per destination for fan-out (each destination receives all entries)
+	channels := make([]chan types.LogEntry, len(p.destinations))
 	var wg sync.WaitGroup
-	for i, o := range p.outputs {
+	for i, d := range p.destinations {
 		ch := make(chan types.LogEntry, p.bufferSize)
 		channels[i] = ch
 		wg.Add(1)
-		go func(o outputs.Output, ch <-chan types.LogEntry) {
+		go func(d destinations.Destination, ch <-chan types.LogEntry) {
 			defer wg.Done()
-			o.SendLogs(ctx, ch)
-		}(o, ch)
+			d.SendLogs(ctx, ch)
+		}(d, ch)
 	}
 
-	// Parse records and fan out to all output channels
+	// Parse records and fan out to all destination channels
 	entries := make(chan types.LogEntry, p.bufferSize)
 	go func() {
 		if err := p.parseRecords(pr, entries); err != nil {
@@ -199,7 +199,7 @@ func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) 
 		close(entries)
 	}()
 
-	// Fan out: send each entry to all output channels
+	// Fan out: send each entry to all destination channels
 	var count int
 	for entry := range entries {
 		count++
@@ -208,7 +208,7 @@ func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) 
 		}
 	}
 
-	// Close all output channels
+	// Close all destination channels
 	for _, ch := range channels {
 		close(ch)
 	}

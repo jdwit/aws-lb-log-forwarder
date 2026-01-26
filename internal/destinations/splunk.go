@@ -1,4 +1,4 @@
-package outputs
+package destinations
 
 import (
 	"bytes"
@@ -36,7 +36,7 @@ type splunkEvent struct {
 	Event      map[string]string `json:"event"`
 }
 
-// NewSplunk creates a Splunk HEC output from environment configuration.
+// NewSplunk creates a Splunk HEC destination from environment configuration.
 func NewSplunk() (*Splunk, error) {
 	endpoint, err := requiredEnv("SPLUNK_HEC_ENDPOINT")
 	if err != nil {

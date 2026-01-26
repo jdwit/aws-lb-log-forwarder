@@ -1,4 +1,4 @@
-package outputs
+package destinations
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 // Stdout writes log entries to standard output.
 type Stdout struct{}
 
-// NewStdout creates a stdout output.
+// NewStdout creates a stdout destination.
 func NewStdout() *Stdout {
 	return &Stdout{}
 }

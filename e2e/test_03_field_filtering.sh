@@ -30,7 +30,7 @@ export AWS_ENDPOINT_URL="$LOCALSTACK_ENDPOINT"
 export AWS_ACCESS_KEY_ID="test"
 export AWS_SECRET_ACCESS_KEY="test"
 export AWS_REGION="eu-west-1"
-export OUTPUTS="stdout"
+export DESTINATIONS="stdout"
 export FIELDS="time,elb_status_code,request"
 
 OUTPUT=$("$BINARY" "s3://$BUCKET/logs/")

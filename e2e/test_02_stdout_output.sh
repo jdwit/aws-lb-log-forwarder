@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test: stdout output mode
+# Test: stdout destination mode
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -27,12 +27,12 @@ gzip -c "$TEMP_LOG" > "$TEMP_GZ"
 aws --endpoint-url="$LOCALSTACK_ENDPOINT" s3 mb "s3://$BUCKET" 2>/dev/null || true
 aws --endpoint-url="$LOCALSTACK_ENDPOINT" s3 cp "$TEMP_GZ" "s3://$BUCKET/logs/test.log.gz"
 
-# Run forwarder with stdout output
+# Run forwarder with stdout destination
 export AWS_ENDPOINT_URL="$LOCALSTACK_ENDPOINT"
 export AWS_ACCESS_KEY_ID="test"
 export AWS_SECRET_ACCESS_KEY="test"
 export AWS_REGION="eu-west-1"
-export OUTPUTS="stdout"
+export DESTINATIONS="stdout"
 
 OUTPUT=$("$BINARY" "s3://$BUCKET/logs/")
 
@@ -53,7 +53,7 @@ if [ "$LINE_COUNT" -ne 2 ]; then
     exit 1
 fi
 
-echo "stdout output verified: $LINE_COUNT entries"
+echo "stdout destination verified: $LINE_COUNT entries"
 
 # Cleanup
 rm -f "$TEMP_LOG" "$TEMP_GZ"

@@ -1,4 +1,4 @@
-package outputs
+package destinations
 
 import (
 	"context"
@@ -36,7 +36,7 @@ type CloudWatch struct {
 	logStream  string
 }
 
-// NewCloudWatch creates a CloudWatch output from environment configuration.
+// NewCloudWatch creates a CloudWatch destination from environment configuration.
 func NewCloudWatch(sess *session.Session) (*CloudWatch, error) {
 	group, err := requiredEnv("CLOUDWATCH_LOG_GROUP")
 	if err != nil {

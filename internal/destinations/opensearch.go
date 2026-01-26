@@ -1,4 +1,4 @@
-package outputs
+package destinations
 
 import (
 	"bytes"
@@ -28,7 +28,7 @@ type OpenSearch struct {
 	password string
 }
 
-// NewOpenSearch creates an OpenSearch output from environment configuration.
+// NewOpenSearch creates an OpenSearch destination from environment configuration.
 func NewOpenSearch() (*OpenSearch, error) {
 	endpoint, err := requiredEnv("OPENSEARCH_ENDPOINT")
 	if err != nil {

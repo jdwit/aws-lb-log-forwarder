@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jdwit/aws-lb-log-forwarder/internal/outputs"
+	"github.com/jdwit/aws-lb-log-forwarder/internal/destinations"
 	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -56,9 +56,9 @@ func TestProcessLogs(t *testing.T) {
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
-			s3:      mockS3,
-			fields:  fields,
-			outputs: []outputs.Output{outputs.NewStdout()},
+			s3:           mockS3,
+			fields:       fields,
+			destinations: []destinations.Destination{destinations.NewStdout()},
 		}
 
 		err = lp.ProcessLogs(context.Background(), types.S3ObjectInfo{Bucket: "test-bucket", Key: "test-key"})
@@ -262,13 +262,13 @@ func loadTestData(t *testing.T) *bytes.Buffer {
 	return gzipData(t, data)
 }
 
-// MockOutput captures log entries for testing.
-type MockOutput struct {
+// MockDestination captures log entries for testing.
+type MockDestination struct {
 	mu      sync.Mutex
 	entries []types.LogEntry
 }
 
-func (m *MockOutput) SendLogs(ctx context.Context, entries <-chan types.LogEntry) {
+func (m *MockDestination) SendLogs(ctx context.Context, entries <-chan types.LogEntry) {
 	for entry := range entries {
 		m.mu.Lock()
 		m.entries = append(m.entries, entry)
@@ -276,7 +276,7 @@ func (m *MockOutput) SendLogs(ctx context.Context, entries <-chan types.LogEntry
 	}
 }
 
-func (m *MockOutput) Entries() []types.LogEntry {
+func (m *MockDestination) Entries() []types.LogEntry {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.entries
@@ -285,7 +285,7 @@ func (m *MockOutput) Entries() []types.LogEntry {
 func TestHandleLambdaEvent(t *testing.T) {
 	t.Run("Process single S3 event", func(t *testing.T) {
 		mockS3 := new(MockS3API)
-		mockOutput := &MockOutput{}
+		mockDest := &MockDestination{}
 
 		buf := loadTestData(t)
 		mockS3.On("GetObject", mock.Anything).Return(&s3.GetObjectOutput{
@@ -296,9 +296,9 @@ func TestHandleLambdaEvent(t *testing.T) {
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
-			s3:      mockS3,
-			fields:  fields,
-			outputs: []outputs.Output{mockOutput},
+			s3:           mockS3,
+			fields:       fields,
+			destinations: []destinations.Destination{mockDest},
 		}
 
 		event := events.S3Event{
@@ -316,7 +316,7 @@ func TestHandleLambdaEvent(t *testing.T) {
 		require.NoError(t, err)
 		mockS3.AssertExpectations(t)
 
-		entries := mockOutput.Entries()
+		entries := mockDest.Entries()
 		assert.Len(t, entries, 5)
 		assert.Equal(t, "200", entries[0].Data["elb_status_code"])
 		assert.Equal(t, "201", entries[1].Data["elb_status_code"])
@@ -327,7 +327,7 @@ func TestHandleLambdaEvent(t *testing.T) {
 
 	t.Run("Process multiple S3 events", func(t *testing.T) {
 		mockS3 := new(MockS3API)
-		mockOutput := &MockOutput{}
+		mockDest := &MockDestination{}
 
 		// Each call needs its own buffer since it's consumed during read
 		mockS3.On("GetObject", mock.Anything).Return(&s3.GetObjectOutput{
@@ -341,9 +341,9 @@ func TestHandleLambdaEvent(t *testing.T) {
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
-			s3:      mockS3,
-			fields:  fields,
-			outputs: []outputs.Output{mockOutput},
+			s3:           mockS3,
+			fields:       fields,
+			destinations: []destinations.Destination{mockDest},
 		}
 
 		event := events.S3Event{
@@ -366,13 +366,13 @@ func TestHandleLambdaEvent(t *testing.T) {
 		err = lp.HandleLambdaEvent(context.Background(), event)
 		require.NoError(t, err)
 
-		entries := mockOutput.Entries()
+		entries := mockDest.Entries()
 		assert.Len(t, entries, 10)
 	})
 
 	t.Run("S3 error handling", func(t *testing.T) {
 		mockS3 := new(MockS3API)
-		mockOutput := &MockOutput{}
+		mockDest := &MockDestination{}
 
 		mockS3.On("GetObject", mock.Anything).Return(
 			(*s3.GetObjectOutput)(nil),
@@ -383,9 +383,9 @@ func TestHandleLambdaEvent(t *testing.T) {
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
-			s3:      mockS3,
-			fields:  fields,
-			outputs: []outputs.Output{mockOutput},
+			s3:           mockS3,
+			fields:       fields,
+			destinations: []destinations.Destination{mockDest},
 		}
 
 		event := events.S3Event{
@@ -408,7 +408,7 @@ func TestHandleLambdaEvent(t *testing.T) {
 func TestHandleS3URL(t *testing.T) {
 	t.Run("Process objects matching prefix", func(t *testing.T) {
 		mockS3 := new(MockS3API)
-		mockOutput := &MockOutput{}
+		mockDest := &MockDestination{}
 
 		mockS3.On("ListObjectsV2", mock.Anything).Return(&s3.ListObjectsV2Output{
 			Contents: []*s3.Object{
@@ -429,21 +429,21 @@ func TestHandleS3URL(t *testing.T) {
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
-			s3:      mockS3,
-			fields:  fields,
-			outputs: []outputs.Output{mockOutput},
+			s3:           mockS3,
+			fields:       fields,
+			destinations: []destinations.Destination{mockDest},
 		}
 
 		err = lp.HandleS3URL(context.Background(), "s3://my-bucket/logs/2024/03/21/")
 		require.NoError(t, err)
 
-		entries := mockOutput.Entries()
+		entries := mockDest.Entries()
 		assert.Len(t, entries, 10)
 	})
 
 	t.Run("Paginated results", func(t *testing.T) {
 		mockS3 := new(MockS3API)
-		mockOutput := &MockOutput{}
+		mockDest := &MockDestination{}
 
 		// First page
 		mockS3.On("ListObjectsV2", mock.MatchedBy(func(input *s3.ListObjectsV2Input) bool {
@@ -477,15 +477,15 @@ func TestHandleS3URL(t *testing.T) {
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
-			s3:      mockS3,
-			fields:  fields,
-			outputs: []outputs.Output{mockOutput},
+			s3:           mockS3,
+			fields:       fields,
+			destinations: []destinations.Destination{mockDest},
 		}
 
 		err = lp.HandleS3URL(context.Background(), "s3://my-bucket/logs/")
 		require.NoError(t, err)
 
-		entries := mockOutput.Entries()
+		entries := mockDest.Entries()
 		assert.Len(t, entries, 10)
 		mockS3.AssertExpectations(t)
 	})
@@ -495,9 +495,9 @@ func TestHandleS3URL(t *testing.T) {
 		fields, _ := NewFieldFilter(LBTypeALB, "")
 
 		lp := &LogProcessor{
-			s3:      mockS3,
-			fields:  fields,
-			outputs: []outputs.Output{},
+			s3:           mockS3,
+			fields:       fields,
+			destinations: []destinations.Destination{},
 		}
 
 		err := lp.HandleS3URL(context.Background(), "invalid-url")
@@ -509,7 +509,7 @@ func TestHandleS3URL(t *testing.T) {
 func TestProcessLogsWithRealisticData(t *testing.T) {
 	t.Run("Full pipeline with sample logs", func(t *testing.T) {
 		mockS3 := new(MockS3API)
-		mockOutput := &MockOutput{}
+		mockDest := &MockDestination{}
 
 		buf := loadTestData(t)
 		mockS3.On("GetObject", mock.Anything).Return(&s3.GetObjectOutput{
@@ -520,9 +520,9 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
-			s3:      mockS3,
-			fields:  fields,
-			outputs: []outputs.Output{mockOutput},
+			s3:           mockS3,
+			fields:       fields,
+			destinations: []destinations.Destination{mockDest},
 		}
 
 		err = lp.ProcessLogs(context.Background(), types.S3ObjectInfo{
@@ -531,7 +531,7 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		entries := mockOutput.Entries()
+		entries := mockDest.Entries()
 		require.Len(t, entries, 5)
 
 		// Verify first entry (GET request, 200)
@@ -563,7 +563,7 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 
 	t.Run("Field filtering", func(t *testing.T) {
 		mockS3 := new(MockS3API)
-		mockOutput := &MockOutput{}
+		mockDest := &MockDestination{}
 
 		buf := loadTestData(t)
 		mockS3.On("GetObject", mock.Anything).Return(&s3.GetObjectOutput{
@@ -574,9 +574,9 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
-			s3:      mockS3,
-			fields:  fields,
-			outputs: []outputs.Output{mockOutput},
+			s3:           mockS3,
+			fields:       fields,
+			destinations: []destinations.Destination{mockDest},
 		}
 
 		err = lp.ProcessLogs(context.Background(), types.S3ObjectInfo{
@@ -585,7 +585,7 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		entries := mockOutput.Entries()
+		entries := mockDest.Entries()
 		require.Len(t, entries, 5)
 
 		// Only specified fields should be present
@@ -597,10 +597,10 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 		assert.NotContains(t, entries[0].Data, "client:port")
 	})
 
-	t.Run("Multiple outputs receive all entries", func(t *testing.T) {
+	t.Run("Multiple destinations receive all entries", func(t *testing.T) {
 		mockS3 := new(MockS3API)
-		output1 := &MockOutput{}
-		output2 := &MockOutput{}
+		dest1 := &MockDestination{}
+		dest2 := &MockDestination{}
 
 		buf := loadTestData(t)
 		mockS3.On("GetObject", mock.Anything).Return(&s3.GetObjectOutput{
@@ -611,9 +611,9 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 		require.NoError(t, err)
 
 		lp := &LogProcessor{
-			s3:      mockS3,
-			fields:  fields,
-			outputs: []outputs.Output{output1, output2},
+			s3:           mockS3,
+			fields:       fields,
+			destinations: []destinations.Destination{dest1, dest2},
 		}
 
 		err = lp.ProcessLogs(context.Background(), types.S3ObjectInfo{
@@ -622,16 +622,16 @@ func TestProcessLogsWithRealisticData(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Both outputs should receive ALL entries (fan-out replication)
-		entries1 := output1.Entries()
-		entries2 := output2.Entries()
-		assert.Len(t, entries1, 5, "output1 should receive all 5 entries")
-		assert.Len(t, entries2, 5, "output2 should receive all 5 entries")
+		// Both destinations should receive ALL entries (fan-out replication)
+		entries1 := dest1.Entries()
+		entries2 := dest2.Entries()
+		assert.Len(t, entries1, 5, "dest1 should receive all 5 entries")
+		assert.Len(t, entries2, 5, "dest2 should receive all 5 entries")
 
 		// Verify both received the same data
 		for i := 0; i < 5; i++ {
 			assert.Equal(t, entries1[i].Data["elb_status_code"], entries2[i].Data["elb_status_code"],
-				"entry %d should have same status code in both outputs", i)
+				"entry %d should have same status code in both destinations", i)
 		}
 	})
 }

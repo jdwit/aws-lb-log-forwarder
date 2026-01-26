@@ -3,31 +3,31 @@
 [![CI](https://github.com/jdwit/aws-lb-log-forwarder/actions/workflows/ci.yml/badge.svg)](https://github.com/jdwit/aws-lb-log-forwarder/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/jdwit/aws-lb-log-forwarder)](https://goreportcard.com/report/github.com/jdwit/aws-lb-log-forwarder)
 
-Forward AWS ALB and NLB access logs from S3 to various outputs.
+Forward AWS ALB and NLB access logs from S3 to various destinations.
 
 ## How It Works
 
-AWS load balancers write gzipped access logs to S3. This tool runs as a Lambda function triggered by S3 events; each time a new log file lands, Lambda processes it and forwards the entries to your configured outputs.
+AWS load balancers write gzipped access logs to S3. This tool runs as a Lambda function triggered by S3 events; each time a new log file lands, Lambda processes it and forwards the entries to your configured destinations.
 
 ```
-ALB/NLB → S3 bucket → S3 event → Lambda → outputs
+ALB/NLB → S3 bucket → S3 event → Lambda → destinations
 ```
 
 ### Streaming Architecture
 
 Most log forwarding solutions load entire log files into memory before processing. This doesn't scale: during peak traffic, log files grow large, Lambda functions run out of memory, and you end up with gaps in your data.
 
-This tool processes log files as a streaming pipeline with bounded memory usage. Each stage runs in its own goroutine, connected by channels with backpressure. The pipeline streams data without buffering entire files in memory—if an output is slow, parsing automatically throttles.
+This tool processes log files as a streaming pipeline with bounded memory usage. Each stage runs in its own goroutine, connected by channels with backpressure. The pipeline streams data without buffering entire files in memory.
 
 ## Deployment
 
-See [terraform-aws-lb-log-forwarder](https://github.com/jdwit/terraform-aws-lb-log-forwarder) for the Terraform module. Includes Lambda deployment, S3 trigger, and CloudWatch alarm on failures.
+See [terraform-aws-lb-log-forwarder](https://github.com/jdwit/terraform-aws-lb-log-forwarder) for the Terraform module.
 
 Field definitions from AWS docs:
 - [ALB access log fields](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html)
 - [NLB access log fields](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-access-logs.html)
 
-## Supported Outputs
+## Supported Destinations
 
 - `cloudwatch` – CloudWatch Logs
 - `opensearch` – OpenSearch
@@ -39,7 +39,7 @@ Field definitions from AWS docs:
 | Variable | Description |
 |----------|-------------|
 | `LB_TYPE` | Load balancer type: `alb` (default) or `nlb` |
-| `OUTPUTS` | Required. Comma-separated list of outputs |
+| `DESTINATIONS` | Required. Comma-separated list of destinations |
 | `FIELDS` | Optional. Comma-separated fields to include (default: all) |
 | `BUFFER_SIZE` | Optional. Channel buffer size in number of log entries (default: 2000) |
 | `CLOUDWATCH_LOG_GROUP` | CloudWatch log group name |
@@ -63,8 +63,8 @@ Can also run standalone for testing or backfilling:
 go install github.com/jdwit/aws-lb-log-forwarder@latest
 
 # ALB logs (default)
-OUTPUTS=stdout aws-lb-log-forwarder s3://bucket/path/to/alb-logs/
+DESTINATIONS=stdout aws-lb-log-forwarder s3://bucket/path/to/alb-logs/
 
 # NLB logs
-LB_TYPE=nlb OUTPUTS=stdout aws-lb-log-forwarder s3://bucket/path/to/nlb-logs/
+LB_TYPE=nlb DESTINATIONS=stdout aws-lb-log-forwarder s3://bucket/path/to/nlb-logs/
 ```

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test: Lambda event processing with CloudWatch output
+# Test: Lambda event processing with CloudWatch destination
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -36,7 +36,7 @@ export AWS_ENDPOINT_URL="$LOCALSTACK_ENDPOINT"
 export AWS_ACCESS_KEY_ID="test"
 export AWS_SECRET_ACCESS_KEY="test"
 export AWS_REGION="eu-west-1"
-export OUTPUTS="cloudwatch"
+export DESTINATIONS="cloudwatch"
 export CLOUDWATCH_LOG_GROUP="$LOG_GROUP"
 export CLOUDWATCH_LOG_STREAM="$LOG_STREAM"
 

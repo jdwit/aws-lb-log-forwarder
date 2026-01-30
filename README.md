@@ -1,4 +1,4 @@
-# AWS Load Balancer Log Forwarder
+Is# AWS Load Balancer Log Forwarder
 
 [![CI](https://github.com/jdwit/aws-lb-log-forwarder/actions/workflows/ci.yml/badge.svg)](https://github.com/jdwit/aws-lb-log-forwarder/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/jdwit/aws-lb-log-forwarder)](https://goreportcard.com/report/github.com/jdwit/aws-lb-log-forwarder)
@@ -7,17 +7,13 @@ Forward AWS ALB and NLB access logs from S3 to various destinations.
 
 ## How It Works
 
-AWS load balancers write gzipped access logs to S3. This tool runs as a Lambda function triggered by S3 events; each time a new log file lands, Lambda processes it and forwards the entries to your configured destinations.
+AWS load balancers write gzipped access logs to S3. This tool runs as a Lambda function triggered by `S3:ObjectCreated:*` events; each time a new log file lands, Lambda processes it and forwards the entries to your configured destinations. Designed to easily extend with new destinations.
 
-```
-ALB/NLB → S3 bucket → S3 event → Lambda → destinations
-```
+![Architecture Diagram](diagram.png)
 
 ### Streaming Architecture
 
-Most log forwarding solutions load entire log files into memory before processing. This doesn't scale: during peak traffic, log files grow large, Lambda functions run out of memory, and you end up with gaps in your data.
-
-This tool processes log files as a streaming pipeline with bounded memory usage. Each stage runs in its own goroutine, connected by channels with backpressure. The pipeline streams data without buffering entire files in memory.
+Instead of loading entire log files into memory before processing, this tool uses a streaming pipeline with bounded memory usage. Each stage runs in its own goroutine, connected by channels with backpressure. This keeps memory usage stable regardless of log file size. Use `BUFFER_SIZE` to tune the channel buffer if needed.
 
 ## Deployment
 

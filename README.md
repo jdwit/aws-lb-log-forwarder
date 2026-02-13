@@ -1,15 +1,16 @@
 # AWS Load Balancer Log Forwarder
 
+![AWS Load Balancer Log Forwarder](cover.png) 
+
 [![CI](https://github.com/jdwit/aws-lb-log-forwarder/actions/workflows/ci.yml/badge.svg)](https://github.com/jdwit/aws-lb-log-forwarder/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/jdwit/aws-lb-log-forwarder)](https://goreportcard.com/report/github.com/jdwit/aws-lb-log-forwarder)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Forward AWS ALB and NLB access logs from S3 to various destinations.
 
 ## How It Works
 
 AWS load balancers write gzipped access logs to S3. This tool runs as a Lambda function triggered by `S3:ObjectCreated:*` events; each time a new log file lands, Lambda processes it and forwards the entries to your configured destinations. Designed to easily extend with new destinations.
-
-![Architecture Diagram](diagram.png)
 
 ### Streaming Architecture
 

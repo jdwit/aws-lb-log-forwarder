@@ -13,8 +13,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/jdwit/aws-lb-log-forwarder/internal/destinations"
 	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 	"github.com/stretchr/testify/assert"
@@ -26,12 +27,12 @@ type MockS3API struct {
 	mock.Mock
 }
 
-func (m *MockS3API) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+func (m *MockS3API) GetObject(_ context.Context, input *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
 	args := m.Called(input)
 	return args.Get(0).(*s3.GetObjectOutput), args.Error(1)
 }
 
-func (m *MockS3API) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (m *MockS3API) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
 	args := m.Called(input)
 	return args.Get(0).(*s3.ListObjectsV2Output), args.Error(1)
 }
@@ -178,9 +179,9 @@ func TestRecordToEntry(t *testing.T) {
 			"-",
 			"-",
 			"TID_a1b2c3d4e5f67890abcdef1234567890",
-			"-",                    // transformed_host
-			"-",                    // transformed_uri
-			"OriginalRetrieved",    // request_transform_status
+			"-",                 // transformed_host
+			"-",                 // transformed_uri
+			"OriginalRetrieved", // request_transform_status
 			// Extra future fields that AWS might add
 			"future_field_1",
 			"future_field_2",
@@ -455,7 +456,7 @@ func TestHandleS3URL(t *testing.T) {
 		mockDest := &MockDestination{}
 
 		mockS3.On("ListObjectsV2", mock.Anything).Return(&s3.ListObjectsV2Output{
-			Contents: []*s3.Object{
+			Contents: []s3types.Object{
 				{Key: aws.String("logs/2024/03/21/file1.log.gz")},
 				{Key: aws.String("logs/2024/03/21/file2.log.gz")},
 			},
@@ -493,7 +494,7 @@ func TestHandleS3URL(t *testing.T) {
 		mockS3.On("ListObjectsV2", mock.MatchedBy(func(input *s3.ListObjectsV2Input) bool {
 			return input.ContinuationToken == nil
 		})).Return(&s3.ListObjectsV2Output{
-			Contents: []*s3.Object{
+			Contents: []s3types.Object{
 				{Key: aws.String("logs/file1.log.gz")},
 			},
 			IsTruncated:           aws.Bool(true),
@@ -504,7 +505,7 @@ func TestHandleS3URL(t *testing.T) {
 		mockS3.On("ListObjectsV2", mock.MatchedBy(func(input *s3.ListObjectsV2Input) bool {
 			return input.ContinuationToken != nil && *input.ContinuationToken == "token1"
 		})).Return(&s3.ListObjectsV2Output{
-			Contents: []*s3.Object{
+			Contents: []s3types.Object{
 				{Key: aws.String("logs/file2.log.gz")},
 			},
 			IsTruncated: aws.Bool(false),

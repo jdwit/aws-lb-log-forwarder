@@ -3,7 +3,7 @@ package destinations
 import (
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -42,9 +42,7 @@ func TestNew(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			mockSession := &session.Session{}
-
-			destinations, err := New(tc.config, mockSession)
+			destinations, err := New(tc.config, aws.Config{})
 
 			if tc.expectErr {
 				assert.Error(t, err)

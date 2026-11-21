@@ -8,9 +8,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 )
 
@@ -22,22 +22,22 @@ const (
 
 // CloudWatchAPI defines the CloudWatch Logs operations used.
 type CloudWatchAPI interface {
-	PutLogEvents(*cloudwatchlogs.PutLogEventsInput) (*cloudwatchlogs.PutLogEventsOutput, error)
-	CreateLogGroup(*cloudwatchlogs.CreateLogGroupInput) (*cloudwatchlogs.CreateLogGroupOutput, error)
-	CreateLogStream(*cloudwatchlogs.CreateLogStreamInput) (*cloudwatchlogs.CreateLogStreamOutput, error)
-	DescribeLogGroups(*cloudwatchlogs.DescribeLogGroupsInput) (*cloudwatchlogs.DescribeLogGroupsOutput, error)
-	DescribeLogStreams(*cloudwatchlogs.DescribeLogStreamsInput) (*cloudwatchlogs.DescribeLogStreamsOutput, error)
+	PutLogEvents(context.Context, *cloudwatchlogs.PutLogEventsInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.PutLogEventsOutput, error)
+	CreateLogGroup(context.Context, *cloudwatchlogs.CreateLogGroupInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.CreateLogGroupOutput, error)
+	CreateLogStream(context.Context, *cloudwatchlogs.CreateLogStreamInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.CreateLogStreamOutput, error)
+	DescribeLogGroups(context.Context, *cloudwatchlogs.DescribeLogGroupsInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.DescribeLogGroupsOutput, error)
+	DescribeLogStreams(context.Context, *cloudwatchlogs.DescribeLogStreamsInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.DescribeLogStreamsOutput, error)
 }
 
 // CloudWatch sends log entries to CloudWatch Logs.
 type CloudWatch struct {
-	client     CloudWatchAPI
-	logGroup   string
-	logStream  string
+	client    CloudWatchAPI
+	logGroup  string
+	logStream string
 }
 
 // NewCloudWatch creates a CloudWatch destination from environment configuration.
-func NewCloudWatch(sess *session.Session) (*CloudWatch, error) {
+func NewCloudWatch(cfg aws.Config) (*CloudWatch, error) {
 	group, err := requiredEnv("CLOUDWATCH_LOG_GROUP")
 	if err != nil {
 		return nil, err
@@ -48,12 +48,13 @@ func NewCloudWatch(sess *session.Session) (*CloudWatch, error) {
 		return nil, err
 	}
 
-	client := cloudwatchlogs.New(sess)
+	client := cloudwatchlogs.NewFromConfig(cfg)
+	ctx := context.Background()
 
-	if err := ensureLogGroup(client, group); err != nil {
+	if err := ensureLogGroup(ctx, client, group); err != nil {
 		return nil, fmt.Errorf("ensure log group: %w", err)
 	}
-	if err := ensureLogStream(client, group, stream); err != nil {
+	if err := ensureLogStream(ctx, client, group, stream); err != nil {
 		return nil, fmt.Errorf("ensure log stream: %w", err)
 	}
 
@@ -66,7 +67,7 @@ func NewCloudWatch(sess *session.Session) (*CloudWatch, error) {
 
 // SendLogs receives entries and batches them to CloudWatch.
 func (c *CloudWatch) SendLogs(ctx context.Context, entries <-chan types.LogEntry) {
-	var batch []*cloudwatchlogs.InputLogEvent
+	var batch []cwtypes.InputLogEvent
 	var batchSize int
 
 	ticker := time.NewTicker(flushInterval)
@@ -99,7 +100,7 @@ func (c *CloudWatch) SendLogs(ctx context.Context, entries <-chan types.LogEntry
 				continue
 			}
 
-			event := &cloudwatchlogs.InputLogEvent{
+			event := cwtypes.InputLogEvent{
 				Message:   aws.String(string(data)),
 				Timestamp: aws.Int64(entry.Timestamp.UnixMilli()),
 			}
@@ -119,12 +120,13 @@ func (c *CloudWatch) SendLogs(ctx context.Context, entries <-chan types.LogEntry
 	}
 }
 
-func (c *CloudWatch) send(events []*cloudwatchlogs.InputLogEvent) {
+func (c *CloudWatch) send(events []cwtypes.InputLogEvent) {
 	sort.Slice(events, func(i, j int) bool {
 		return *events[i].Timestamp < *events[j].Timestamp
 	})
 
-	_, err := c.client.PutLogEvents(&cloudwatchlogs.PutLogEventsInput{
+	// Background context: the final flush on ctx.Done() must still be sent.
+	_, err := c.client.PutLogEvents(context.Background(), &cloudwatchlogs.PutLogEventsInput{
 		LogEvents:     events,
 		LogGroupName:  aws.String(c.logGroup),
 		LogStreamName: aws.String(c.logStream),
@@ -134,8 +136,8 @@ func (c *CloudWatch) send(events []*cloudwatchlogs.InputLogEvent) {
 	}
 }
 
-func ensureLogGroup(client CloudWatchAPI, name string) error {
-	resp, err := client.DescribeLogGroups(&cloudwatchlogs.DescribeLogGroupsInput{
+func ensureLogGroup(ctx context.Context, client CloudWatchAPI, name string) error {
+	resp, err := client.DescribeLogGroups(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
 		LogGroupNamePrefix: aws.String(name),
 	})
 	if err != nil {
@@ -149,14 +151,14 @@ func ensureLogGroup(client CloudWatchAPI, name string) error {
 	}
 
 	slog.Info("creating log group", "name", name)
-	_, err = client.CreateLogGroup(&cloudwatchlogs.CreateLogGroupInput{
+	_, err = client.CreateLogGroup(ctx, &cloudwatchlogs.CreateLogGroupInput{
 		LogGroupName: aws.String(name),
 	})
 	return err
 }
 
-func ensureLogStream(client CloudWatchAPI, group, stream string) error {
-	resp, err := client.DescribeLogStreams(&cloudwatchlogs.DescribeLogStreamsInput{
+func ensureLogStream(ctx context.Context, client CloudWatchAPI, group, stream string) error {
+	resp, err := client.DescribeLogStreams(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
 		LogGroupName:        aws.String(group),
 		LogStreamNamePrefix: aws.String(stream),
 	})
@@ -171,7 +173,7 @@ func ensureLogStream(client CloudWatchAPI, group, stream string) error {
 	}
 
 	slog.Info("creating log stream", "group", group, "stream", stream)
-	_, err = client.CreateLogStream(&cloudwatchlogs.CreateLogStreamInput{
+	_, err = client.CreateLogStream(ctx, &cloudwatchlogs.CreateLogStreamInput{
 		LogGroupName:  aws.String(group),
 		LogStreamName: aws.String(stream),
 	})

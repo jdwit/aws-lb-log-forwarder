@@ -14,9 +14,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jdwit/aws-lb-log-forwarder/internal/destinations"
 	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 	"golang.org/x/sync/errgroup"
@@ -29,8 +28,8 @@ const (
 
 // S3API defines the S3 operations used by LogProcessor.
 type S3API interface {
-	GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error)
-	ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
+	GetObject(ctx context.Context, input *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
 }
 
 // LogProcessor processes load balancer log files from S3 and sends them to configured destinations.
@@ -42,7 +41,7 @@ type LogProcessor struct {
 }
 
 // New creates a LogProcessor from environment configuration.
-func New(sess *session.Session) (*LogProcessor, error) {
+func New(cfg aws.Config) (*LogProcessor, error) {
 	lbType := LBType(strings.ToLower(os.Getenv("LB_TYPE")))
 	if lbType == "" {
 		lbType = LBTypeALB // default to ALB for backwards compatibility
@@ -53,7 +52,7 @@ func New(sess *session.Session) (*LogProcessor, error) {
 		return nil, fmt.Errorf("invalid fields config: %w", err)
 	}
 
-	dests, err := destinations.New(os.Getenv("DESTINATIONS"), sess)
+	dests, err := destinations.New(os.Getenv("DESTINATIONS"), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("invalid destinations config: %w", err)
 	}
@@ -67,7 +66,10 @@ func New(sess *session.Session) (*LogProcessor, error) {
 	}
 
 	return &LogProcessor{
-		s3:           s3.New(sess),
+		s3: s3.NewFromConfig(cfg, func(o *s3.Options) {
+			// Custom endpoints (LocalStack, MinIO) need path-style addressing.
+			o.UsePathStyle = cfg.BaseEndpoint != nil
+		}),
 		fields:       fields,
 		destinations: dests,
 		bufferSize:   bufferSize,
@@ -112,7 +114,7 @@ func (p *LogProcessor) HandleS3URL(ctx context.Context, url string) error {
 
 	var token *string
 	for {
-		resp, err := p.s3.ListObjectsV2(&s3.ListObjectsV2Input{
+		resp, err := p.s3.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket:            aws.String(bucket),
 			Prefix:            aws.String(prefix),
 			ContinuationToken: token,
@@ -153,7 +155,7 @@ func (p *LogProcessor) processObject(ctx context.Context, obj types.S3ObjectInfo
 func (p *LogProcessor) ProcessLogs(ctx context.Context, obj types.S3ObjectInfo) error {
 	slog.Info("processing", "bucket", obj.Bucket, "key", obj.Key)
 
-	resp, err := p.s3.GetObject(&s3.GetObjectInput{
+	resp, err := p.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(obj.Bucket),
 		Key:    aws.String(obj.Key),
 	})

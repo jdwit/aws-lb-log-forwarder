@@ -6,19 +6,19 @@ import (
 	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/jdwit/aws-lb-log-forwarder/internal/logprocessor"
 )
 
 func main() {
-	sess, err := newSession()
+	// LoadDefaultConfig honours AWS_ENDPOINT_URL for local testing (e.g. LocalStack).
+	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		slog.Error("session failed", "error", err)
+		slog.Error("aws config failed", "error", err)
 		os.Exit(1)
 	}
 
-	proc, err := logprocessor.New(sess)
+	proc, err := logprocessor.New(cfg)
 	if err != nil {
 		slog.Error("processor init failed", "error", err)
 		os.Exit(1)
@@ -40,15 +40,4 @@ func main() {
 		slog.Error("processing failed", "error", err)
 		os.Exit(1)
 	}
-}
-
-func newSession() (*session.Session, error) {
-	if endpoint := os.Getenv("AWS_ENDPOINT_URL"); endpoint != "" {
-		return session.NewSession(&aws.Config{
-			Endpoint:         aws.String(endpoint),
-			DisableSSL:       aws.Bool(true),
-			S3ForcePathStyle: aws.Bool(true),
-		})
-	}
-	return session.NewSession()
 }

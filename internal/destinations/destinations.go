@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 )
 
@@ -16,7 +16,7 @@ type Destination interface {
 }
 
 // New creates destinations from a comma-separated configuration string.
-func New(config string, sess *session.Session) ([]Destination, error) {
+func New(config string, cfg aws.Config) ([]Destination, error) {
 	var result []Destination
 
 	for _, name := range strings.Split(config, ",") {
@@ -30,7 +30,7 @@ func New(config string, sess *session.Session) ([]Destination, error) {
 
 		switch name {
 		case "cloudwatch":
-			d, err = NewCloudWatch(sess)
+			d, err = NewCloudWatch(cfg)
 		case "splunk":
 			d, err = NewSplunk()
 		case "opensearch":

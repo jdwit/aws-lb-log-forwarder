@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 	"github.com/jdwit/aws-lb-log-forwarder/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -17,27 +18,27 @@ type MockCloudWatchClient struct {
 	mock.Mock
 }
 
-func (m *MockCloudWatchClient) PutLogEvents(input *cloudwatchlogs.PutLogEventsInput) (*cloudwatchlogs.PutLogEventsOutput, error) {
+func (m *MockCloudWatchClient) PutLogEvents(_ context.Context, input *cloudwatchlogs.PutLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.PutLogEventsOutput, error) {
 	args := m.Called(input)
 	return args.Get(0).(*cloudwatchlogs.PutLogEventsOutput), args.Error(1)
 }
 
-func (m *MockCloudWatchClient) CreateLogGroup(input *cloudwatchlogs.CreateLogGroupInput) (*cloudwatchlogs.CreateLogGroupOutput, error) {
+func (m *MockCloudWatchClient) CreateLogGroup(_ context.Context, input *cloudwatchlogs.CreateLogGroupInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.CreateLogGroupOutput, error) {
 	args := m.Called(input)
 	return args.Get(0).(*cloudwatchlogs.CreateLogGroupOutput), args.Error(1)
 }
 
-func (m *MockCloudWatchClient) CreateLogStream(input *cloudwatchlogs.CreateLogStreamInput) (*cloudwatchlogs.CreateLogStreamOutput, error) {
+func (m *MockCloudWatchClient) CreateLogStream(_ context.Context, input *cloudwatchlogs.CreateLogStreamInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.CreateLogStreamOutput, error) {
 	args := m.Called(input)
 	return args.Get(0).(*cloudwatchlogs.CreateLogStreamOutput), args.Error(1)
 }
 
-func (m *MockCloudWatchClient) DescribeLogGroups(input *cloudwatchlogs.DescribeLogGroupsInput) (*cloudwatchlogs.DescribeLogGroupsOutput, error) {
+func (m *MockCloudWatchClient) DescribeLogGroups(_ context.Context, input *cloudwatchlogs.DescribeLogGroupsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.DescribeLogGroupsOutput, error) {
 	args := m.Called(input)
 	return args.Get(0).(*cloudwatchlogs.DescribeLogGroupsOutput), args.Error(1)
 }
 
-func (m *MockCloudWatchClient) DescribeLogStreams(input *cloudwatchlogs.DescribeLogStreamsInput) (*cloudwatchlogs.DescribeLogStreamsOutput, error) {
+func (m *MockCloudWatchClient) DescribeLogStreams(_ context.Context, input *cloudwatchlogs.DescribeLogStreamsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.DescribeLogStreamsOutput, error) {
 	args := m.Called(input)
 	return args.Get(0).(*cloudwatchlogs.DescribeLogStreamsOutput), args.Error(1)
 }
@@ -46,12 +47,12 @@ func TestEnsureLogGroup(t *testing.T) {
 	t.Run("Log group exists", func(t *testing.T) {
 		mockClient := new(MockCloudWatchClient)
 		mockClient.On("DescribeLogGroups", mock.Anything).Return(&cloudwatchlogs.DescribeLogGroupsOutput{
-			LogGroups: []*cloudwatchlogs.LogGroup{
+			LogGroups: []cwtypes.LogGroup{
 				{LogGroupName: aws.String("test-log-group")},
 			},
 		}, nil)
 
-		err := ensureLogGroup(mockClient, "test-log-group")
+		err := ensureLogGroup(context.Background(), mockClient, "test-log-group")
 		require.NoError(t, err)
 		mockClient.AssertExpectations(t)
 	})
@@ -59,14 +60,14 @@ func TestEnsureLogGroup(t *testing.T) {
 	t.Run("Log group does not exist", func(t *testing.T) {
 		mockClient := new(MockCloudWatchClient)
 		mockClient.On("DescribeLogGroups", mock.Anything).Return(&cloudwatchlogs.DescribeLogGroupsOutput{
-			LogGroups: []*cloudwatchlogs.LogGroup{},
+			LogGroups: []cwtypes.LogGroup{},
 		}, nil)
 
 		mockClient.On("CreateLogGroup", &cloudwatchlogs.CreateLogGroupInput{
 			LogGroupName: aws.String("test-log-group"),
 		}).Return(&cloudwatchlogs.CreateLogGroupOutput{}, nil)
 
-		err := ensureLogGroup(mockClient, "test-log-group")
+		err := ensureLogGroup(context.Background(), mockClient, "test-log-group")
 		require.NoError(t, err)
 		mockClient.AssertExpectations(t)
 	})
@@ -76,12 +77,12 @@ func TestEnsureLogStream(t *testing.T) {
 	t.Run("Log stream exists", func(t *testing.T) {
 		mockClient := new(MockCloudWatchClient)
 		mockClient.On("DescribeLogStreams", mock.Anything).Return(&cloudwatchlogs.DescribeLogStreamsOutput{
-			LogStreams: []*cloudwatchlogs.LogStream{
+			LogStreams: []cwtypes.LogStream{
 				{LogStreamName: aws.String("test-log-stream")},
 			},
 		}, nil)
 
-		err := ensureLogStream(mockClient, "test-log-group", "test-log-stream")
+		err := ensureLogStream(context.Background(), mockClient, "test-log-group", "test-log-stream")
 		require.NoError(t, err)
 		mockClient.AssertExpectations(t)
 	})
@@ -89,7 +90,7 @@ func TestEnsureLogStream(t *testing.T) {
 	t.Run("Log stream does not exist", func(t *testing.T) {
 		mockClient := new(MockCloudWatchClient)
 		mockClient.On("DescribeLogStreams", mock.Anything).Return(&cloudwatchlogs.DescribeLogStreamsOutput{
-			LogStreams: []*cloudwatchlogs.LogStream{},
+			LogStreams: []cwtypes.LogStream{},
 		}, nil)
 
 		mockClient.On("CreateLogStream", &cloudwatchlogs.CreateLogStreamInput{
@@ -97,7 +98,7 @@ func TestEnsureLogStream(t *testing.T) {
 			LogStreamName: aws.String("test-log-stream"),
 		}).Return(&cloudwatchlogs.CreateLogStreamOutput{}, nil)
 
-		err := ensureLogStream(mockClient, "test-log-group", "test-log-stream")
+		err := ensureLogStream(context.Background(), mockClient, "test-log-group", "test-log-stream")
 		require.NoError(t, err)
 		mockClient.AssertExpectations(t)
 	})
@@ -108,7 +109,7 @@ func TestSend(t *testing.T) {
 		mockClient := new(MockCloudWatchClient)
 		mockClient.On("PutLogEvents", mock.Anything).Return(&cloudwatchlogs.PutLogEventsOutput{}, nil)
 
-		events := []*cloudwatchlogs.InputLogEvent{
+		events := []cwtypes.InputLogEvent{
 			{Message: aws.String("message1"), Timestamp: aws.Int64(1)},
 			{Message: aws.String("message2"), Timestamp: aws.Int64(2)},
 		}
